@@ -50,7 +50,7 @@ const initialTraineeForm = {
 
 // --- 2. 便利関数 ---
 const calculateAge = (birthday: string) => {
-  if (!birthday || birthday.length < 8) return "";
+  if (!birthday) return "";
   const cleanDate = birthday.replace(/\//g, '-');
   const birthDate = new Date(cleanDate);
   if (isNaN(birthDate.getTime())) return "";
@@ -62,7 +62,7 @@ const calculateAge = (birthday: string) => {
 };
 
 const calculateRenewDate = (endDate: string) => {
-  if (!endDate || endDate.length < 8) return "";
+  if (!endDate) return "";
   const cleanDate = endDate.replace(/\//g, '-');
   const date = new Date(cleanDate);
   if (isNaN(date.getTime())) return "";
@@ -88,14 +88,16 @@ export default function Home() {
   const [memoData, setMemoData] = useState({ date: new Date().toLocaleDateString('ja-JP'), text: "", author: "政所", id: null as number | null });
 
   const fetchCompanies = async () => {
-    const q = query(collection(db, "companies"), orderBy("createdAt", "desc"));
-    const querySnapshot = await getDocs(q);
-    const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    setCompanies(data);
-    if (currentCo) {
-      const updated = data.find(c => c.id === currentCo.id);
-      if (updated) setCurrentCo(updated);
-    }
+    try {
+      const q = query(collection(db, "companies"), orderBy("createdAt", "desc"));
+      const querySnapshot = await getDocs(q);
+      const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCompanies(data);
+      if (currentCo) {
+        const updated = data.find(c => c.id === currentCo.id);
+        if (updated) setCurrentCo(updated);
+      }
+    } catch (e) { console.error("Fetch error:", e); }
   };
 
   useEffect(() => { fetchCompanies(); }, []);
@@ -122,16 +124,14 @@ export default function Home() {
     try {
       const docRef = doc(db, "companies", targetId);
       const targetCo = companies.find(c => c.id === targetId);
+      if (!targetCo) throw new Error("Company not found");
       let updatedTrainees = [...(targetCo.trainees || [])];
 
       if (isEditingTr) {
-        const oldData = updatedTrainees.find((t: any) => t.id === trFormData.id);
-        if (oldData && oldData.category !== trFormData.category) {
-          const archiveEntry = { ...oldData, archivedAt: new Date().toISOString(), phaseHistory: undefined };
-          trFormData.phaseHistory = [...(oldData.phaseHistory || []), archiveEntry];
-        }
+        // 更新時
         updatedTrainees = updatedTrainees.map((t: any) => t.id === trFormData.id ? trFormData : t);
       } else {
+        // 新規登録時
         const { targetCompanyId, ...saveData } = trFormData;
         updatedTrainees = [...updatedTrainees, { ...saveData, id: Date.now(), phaseHistory: [] }];
       }
@@ -139,7 +139,10 @@ export default function Home() {
       await updateDoc(docRef, { trainees: updatedTrainees });
       setShowTrForm(false);
       fetchCompanies();
-    } catch (e) { alert("保存エラー"); }
+    } catch (e) { 
+      console.error(e);
+      alert("保存エラーが発生しました。入力内容を確認してください。"); 
+    }
   };
 
   const handleSaveMemo = async () => {
@@ -299,13 +302,7 @@ function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoFo
           {Object.keys(labelMapCo).map(k => (
             <div key={k}>
               <label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapCo[k]}</label>
-              <input 
-                type="text" 
-                placeholder={k.includes('Date') ? '2026/03/13' : ''}
-                value={coFormData[k] || ''} 
-                style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} 
-                onChange={e => setCoFormData({...coFormData, [k]: e.target.value})} 
-              />
+              <input type="text" placeholder={k.includes('Date') ? '2026/03/13' : ''} value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} onChange={e => setCoFormData({...coFormData, [k]: e.target.value})} />
             </div>
           ))}
         </div>
@@ -319,16 +316,25 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
   const handleChange = (k: string, v: string) => {
     let newData = { ...trFormData, [k]: v };
     
-    // 日付が入力されたら自動計算
     if (k === 'birthday') newData.age = calculateAge(v);
     if (k === 'endDate') newData.renewStartDate = calculateRenewDate(v);
     
     if (k === 'category' && isEditingTr) {
-      if (confirm(`${v}へ変更しますか？現在の情報は履歴へ移動し、一部がリセットされます。`)) {
+      if (confirm(`${v}へ変更しますか？現在の情報は「履歴」に保存され、新しい期間情報を入力できるようになります。`)) {
+        // 現在のデータをコピー
+        const archiveEntry = { ...trFormData, archivedAt: new Date().toISOString() };
+        delete archiveEntry.phaseHistory; // 履歴の入れ子を防ぐ
+
+        // フォームをリセット
         const resetFields = ["status", "period", "stayLimit", "cardNumber", "certificateNumber", "applyDate", "certDate", "entryDate", "endDate", "renewStartDate"];
         resetFields.forEach(f => newData[f] = "");
         newData.status = "認定申請準備中";
-      } else { return; }
+        
+        // 履歴に追加
+        newData.phaseHistory = [...(trFormData.phaseHistory || []), archiveEntry];
+      } else {
+        return; // キャンセル時は何もしない
+      }
     }
     setTrFormData(newData);
   };
@@ -350,7 +356,6 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
           {Object.keys(labelMapTr).map(k => (
             <div key={k}>
               <label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapTr[k]}</label>
-              
               {k === 'nationality' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   <select 
@@ -375,14 +380,7 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
               ) : k === 'gender' ? (
                 <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}><option value="男">男</option><option value="女">女</option></select>
               ) : (
-                <input 
-                  type="text" 
-                  placeholder={k.includes('Date') || k.includes('Limit') || k === 'birthday' ? '1995/10/04' : ''}
-                  value={trFormData[k] || ''} 
-                  style={{ width: '100%', padding: '8px', border: '1px solid #ddd', backgroundColor: (k==='age' || k==='renewStartDate') ? '#f0f0f0' : '#fff' }} 
-                  readOnly={k==='age' || k==='renewStartDate'} 
-                  onChange={e => handleChange(k, e.target.value)} 
-                />
+                <input type="text" placeholder={k.includes('Date') || k.includes('Limit') || k === 'birthday' ? '1995/10/04' : ''} value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', backgroundColor: (k==='age' || k==='renewStartDate') ? '#f0f0f0' : '#fff' }} readOnly={k==='age' || k==='renewStartDate'} onChange={e => handleChange(k, e.target.value)} />
               )}
             </div>
           ))}
