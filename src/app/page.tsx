@@ -48,7 +48,7 @@ const initialTraineeForm = {
 };
 
 // --- 2. スタイル・便利関数 ---
-const colors = { main: '#FFF9F0', accent: '#F57C00', text: '#2C3E50', gray: '#95A5A6', lightGray: '#F2F2F2', border: '#E0E0E0', white: '#FFFFFF' };
+const colors = { main: '#FFF9F0', accent: '#F57C00', text: '#2C3E50', gray: '#95A5A6', lightGray: '#F2F2F2', border: '#E0E0E0', white: '#FFFFFF', danger: '#E74C3C' };
 const sharpRadius = '4px';
 const btnBase = { padding: '10px 18px', borderRadius: sharpRadius, border: 'none', cursor: 'pointer', fontWeight: '600' as const, fontSize: '13px' };
 const grayCBtn = { width: '20px', height: '20px', fontSize: '9px', cursor: 'pointer', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: '3px', color: colors.gray, marginLeft: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' };
@@ -66,25 +66,18 @@ const calculateAge = (birthday: string) => {
 const calculateDates = (entryDateStr: string) => {
   const date = new Date(entryDateStr.replace(/\//g, '-'));
   if (isNaN(date.getTime())) return { end: "", renew: "" };
-  
-  // 1年後の同日を取得
   const nextYear = new Date(date);
   nextYear.setFullYear(nextYear.getFullYear() + 1);
-  
-  // その1日前を終了日とする
   const endDate = new Date(nextYear);
   endDate.setDate(nextYear.getDate() - 1);
-  
   const renewDate = new Date(endDate);
   renewDate.setMonth(renewDate.getMonth() - 3);
-  
   const fmt = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}/${m}/${day}`;
   };
-
   return { end: fmt(endDate), renew: fmt(renewDate) };
 };
 
@@ -151,6 +144,34 @@ export default function Home() {
       setEditingPhaseIdx(null);
       fetchCompanies();
     } catch (e) { alert("保存エラーが発生しました"); }
+  };
+
+  // 区分変更を取り消して一つ前の状態に戻す
+  const handleUndoPhaseChange = async (traineeId: number) => {
+    const trainee = currentCo.trainees.find((t: any) => t.id === traineeId);
+    if (!trainee || !trainee.phaseHistory || trainee.phaseHistory.length === 0) return;
+
+    if (!confirm("直前の区分変更を取り消し、一つ前の状態に戻しますか？（現在の最新データは失われます）")) return;
+
+    try {
+      const docRef = doc(db, "companies", currentCo.id);
+      
+      // 履歴の最後を取り出し、それを「最新」にする
+      const newHistory = [...trainee.phaseHistory];
+      const previousData = newHistory.pop(); // 一番新しい履歴を削除しつつ取得
+
+      const updatedTrainees = currentCo.trainees.map((t: any) => {
+        if (t.id === traineeId) {
+          // 履歴から復元したデータに、残りの履歴をセット
+          return { ...previousData, phaseHistory: newHistory, id: t.id };
+        }
+        return t;
+      });
+
+      await updateDoc(docRef, { trainees: updatedTrainees });
+      setActiveTab('current');
+      fetchCompanies();
+    } catch (e) { alert("取り消しに失敗しました"); }
   };
 
   if (view === 'list') {
@@ -234,12 +255,20 @@ export default function Home() {
                   { (activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]).traineeName }
                   <span style={{ fontSize: '13px', color: colors.gray, fontWeight: 'normal' }}> { (activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]).category }</span>
                 </h3>
-                <button onClick={() => { 
-                  const dataToEdit = activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number];
-                  setTrFormData(dataToEdit); setIsEditingTr(true); setEditingPhaseIdx(activeTab === 'current' ? null : (activeTab as number)); setShowTrForm(true); 
-                }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>
-                  {activeTab === 'current' ? '編集・区分変更' : 'この履歴を修正'}
-                </button>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  {/* 最新タブかつ履歴がある場合のみ、取り消しボタンを表示 */}
+                  {activeTab === 'current' && currentTrainee.phaseHistory?.length > 0 && (
+                    <button onClick={() => handleUndoPhaseChange(currentTrainee.id)} style={{ ...btnBase, backgroundColor: '#FFF', border: `1px solid ${colors.danger}`, color: colors.danger }}>
+                      区分変更を取り消す
+                    </button>
+                  )}
+                  <button onClick={() => { 
+                    const dataToEdit = activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number];
+                    setTrFormData(dataToEdit); setIsEditingTr(true); setEditingPhaseIdx(activeTab === 'current' ? null : (activeTab as number)); setShowTrForm(true); 
+                  }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>
+                    {activeTab === 'current' ? '編集・区分変更' : 'この履歴を修正'}
+                  </button>
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: '5px', marginBottom: '20px' }}>
@@ -266,15 +295,6 @@ export default function Home() {
                   );
                 })}
               </div>
-
-              {isTerminated && activeTab === 'current' && (
-                <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: `2px solid ${colors.main}` }}>
-                  <label style={{ fontSize: '12px', fontWeight: 'bold', color: colors.gray, display: 'block', marginBottom: '10px' }}>メモ</label>
-                  <div style={{ width: '100%', minHeight: '80px', padding: '15px', backgroundColor: '#F9F9F9', border: `1px solid ${colors.border}`, borderRadius: sharpRadius, fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: colors.text }}>
-                    {currentTrainee.memo || "（メモはありません）"}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </section>
@@ -289,20 +309,16 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
   const handleChange = (k: string, v: string) => {
     let newData = { ...trFormData, [k]: v };
     if (k === 'birthday') newData.age = calculateAge(v);
-    
     if (k === 'entryDate') {
       const { end, renew } = calculateDates(v);
       newData.endDate = end;
       newData.renewStartDate = renew;
     }
-    
     if (k === 'category' && isEditingTr && editingPhaseIdx === null) {
       if (confirm("区分を変更します。現在のデータは履歴に保存され、最新の入力欄は一部クリアされます。")) {
         const archiveEntry = { ...trFormData };
         delete archiveEntry.phaseHistory;
-        
         newData.phaseHistory = [...(trFormData.phaseHistory || []), archiveEntry];
-        
         keysToClearOnNewPhase.forEach(key => {
           newData[key] = (key === "status") ? "選択する" : "";
         });
@@ -318,7 +334,6 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
         <h2 style={{ fontSize: '18px', marginBottom: '30px', borderLeft: `4px solid ${colors.accent}`, paddingLeft: '15px' }}>
           {editingPhaseIdx !== null ? `履歴データの修正 (${trFormData.category}時)` : '実習生情報の登録・編集'}
         </h2>
-        
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
           {!isEditingTr && (
             <div style={{ gridColumn: 'span 3', padding: '10px', backgroundColor: '#F0F7FF', borderRadius: sharpRadius, marginBottom: '10px' }}>
@@ -329,7 +344,6 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
               </select>
             </div>
           )}
-
           {Object.keys(labelMapTr).map(k => (
             <div key={k} style={{ padding: '8px 12px', backgroundColor: '#FBFBFB', border: '1px solid #EEE', borderRadius: sharpRadius }}>
               <label style={{ fontSize: '11px', color: colors.gray, fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>{labelMapTr[k]}</label>
@@ -350,23 +364,11 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
                   {genderOptions.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : (
-                <input 
-                  type="text" 
-                  value={trFormData[k] || ''} 
-                  placeholder={ (k === 'endDate' || k === 'renewStartDate') ? "自動で入力されます" : "" }
-                  style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} 
-                  onChange={e => handleChange(k, e.target.value)} 
-                />
+                <input type="text" value={trFormData[k] || ''} placeholder={(k === 'endDate' || k === 'renewStartDate') ? "自動で入力されます" : ""} style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} onChange={e => handleChange(k, e.target.value)} />
               )}
             </div>
           ))}
-
-          <div style={{ gridColumn: 'span 3', padding: '8px 12px', backgroundColor: '#FBFBFB', border: '1px solid #EEE', borderRadius: sharpRadius }}>
-            <label style={{ fontSize: '11px', color: colors.gray, fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>メモ</label>
-            <textarea value={trFormData.memo || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', minHeight: '100px', fontSize: '14px' }} onChange={e => handleChange('memo', e.target.value)} />
-          </div>
         </div>
-
         <div style={{ marginTop: '30px', display: 'flex', gap: '15px' }}>
           <button onClick={handleSaveTrainee} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', flex: 2 }}>保存する</button>
           <button onClick={() => setShowTrForm(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, color: colors.text, flex: 1 }}>キャンセル</button>
