@@ -32,6 +32,13 @@ const nationalityOptions = ["ベトナム", "中国", "インドネシア", "フ
 const statusOptions = ["選択する", "認定申請準備中", "認定手続中", "ビザ申請中", "入国待機", "実習中", "一時帰国中", "その他"];
 const genderOptions = ["男", "女"];
 
+// 区分変更時にクリアする項目リスト
+const keysToClearOnNewPhase = [
+  "stayLimit", "cardNumber", "certificateNumber", "applyDate", "certDate", 
+  "entryDate", "renewStartDate", "assignDate", "endDate", "moveDate", 
+  "returnDate", "employmentReportDate", "trainingStartDate", "trainingEndDate"
+];
+
 const initialTraineeForm = {
   targetCompanyId: "", status: "選択する", traineeName: "", kana: "", 
   traineeZip: "", traineeAddress: "", category: "技能実習1号", nationality: "ベトナム",
@@ -61,11 +68,16 @@ const calculateAge = (birthday: string) => {
 const calculateDates = (entryDateStr: string) => {
   const date = new Date(entryDateStr.replace(/\//g, '-'));
   if (isNaN(date.getTime())) return { end: "", renew: "" };
+  
+  // 終了日：入国日の前日の1年後（実質1年後の同日の前日）
   const endDate = new Date(date);
   endDate.setFullYear(endDate.getFullYear() + 1);
   endDate.setDate(endDate.getDate() - 1);
+  
+  // 更新開始日：終了日の3ヶ月前
   const renewDate = new Date(endDate);
   renewDate.setMonth(renewDate.getMonth() - 3);
+  
   const fmt = (d: Date) => d.toISOString().split('T')[0].replace(/-/g, '/');
   return { end: fmt(endDate), renew: fmt(renewDate) };
 };
@@ -75,7 +87,7 @@ export default function Home() {
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
   const [isEditingTr, setIsEditingTr] = useState(false);
-  const [editingPhaseIdx, setEditingPhaseIdx] = useState<number | null>(null); // 履歴の何番目を編集中か
+  const [editingPhaseIdx, setEditingPhaseIdx] = useState<number | null>(null);
   const [currentCo, setCurrentCo] = useState<any>(null);
   const [selectedTrId, setSelectedTrId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'current' | number>('current');
@@ -95,6 +107,12 @@ export default function Home() {
 
   useEffect(() => { fetchCompanies(); }, []);
 
+  // 全実習実施者の合計受入人数（実習終了以外）を計算
+  const totalActiveTrainees = companies.reduce((acc, co) => {
+    const activeInCo = (co.trainees || []).filter((t: any) => t.category !== "実習終了").length;
+    return acc + activeInCo;
+  }, 0);
+
   const copy = (text: string) => { if (text) navigator.clipboard.writeText(text); };
 
   const handleSaveTrainee = async () => {
@@ -106,23 +124,19 @@ export default function Home() {
       let updatedTrainees = [...(targetCo.trainees || [])];
       
       if (isEditingTr) {
-        // 既存実習生の更新
         updatedTrainees = updatedTrainees.map((t: any) => {
           if (t.id === trFormData.id) {
             if (editingPhaseIdx !== null) {
-              // 過去の履歴(phaseHistory)内の特定データを上書き
               const newPhaseHistory = [...(t.phaseHistory || [])];
               newPhaseHistory[editingPhaseIdx] = { ...trFormData };
               return { ...t, phaseHistory: newPhaseHistory };
             } else {
-              // 最新データの更新
               return trFormData;
             }
           }
           return t;
         });
       } else {
-        // 新規作成
         const { targetCompanyId, ...saveData } = trFormData;
         updatedTrainees = [...updatedTrainees, { ...saveData, id: Date.now(), phaseHistory: [] }];
       }
@@ -137,10 +151,12 @@ export default function Home() {
   if (view === 'list') {
     return (
       <main style={{ padding: '40px', backgroundColor: '#F9F9F9', minHeight: '100vh', color: colors.text }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
           <div>
             <h1 style={{ margin: 0, fontSize: '20px', letterSpacing: '0.05em' }}>アシストねっと協同組合</h1>
-            <p style={{ margin: 0, fontSize: '12px', color: colors.gray }}>技能実習生管理システム</p>
+            <p style={{ margin: '4px 0 0 0', fontSize: '13px', fontWeight: 'bold', color: colors.accent }}>
+              現在合計受入実習生数：{totalActiveTrainees} 名
+            </p>
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setEditingPhaseIdx(null); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習生</button>
@@ -213,16 +229,10 @@ export default function Home() {
                   { (activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]).traineeName }
                   <span style={{ fontSize: '13px', color: colors.gray, fontWeight: 'normal' }}> { (activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]).category }</span>
                 </h3>
-                <button 
-                  onClick={() => { 
-                    const dataToEdit = activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number];
-                    setTrFormData(dataToEdit); 
-                    setIsEditingTr(true); 
-                    setEditingPhaseIdx(activeTab === 'current' ? null : (activeTab as number));
-                    setShowTrForm(true); 
-                  }} 
-                  style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}
-                >
+                <button onClick={() => { 
+                  const dataToEdit = activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number];
+                  setTrFormData(dataToEdit); setIsEditingTr(true); setEditingPhaseIdx(activeTab === 'current' ? null : (activeTab as number)); setShowTrForm(true); 
+                }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>
                   {activeTab === 'current' ? '編集・区分変更' : 'この履歴を修正'}
                 </button>
               </div>
@@ -256,7 +266,7 @@ export default function Home() {
                 <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: `2px solid ${colors.main}` }}>
                   <label style={{ fontSize: '12px', fontWeight: 'bold', color: colors.gray, display: 'block', marginBottom: '10px' }}>メモ</label>
                   <div style={{ width: '100%', minHeight: '80px', padding: '15px', backgroundColor: '#F9F9F9', border: `1px solid ${colors.border}`, borderRadius: sharpRadius, fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: colors.text }}>
-                    {currentTrainee.memo || "（メモはありません。右上の編集ボタンから追加できます）"}
+                    {currentTrainee.memo || "（メモはありません）"}
                   </div>
                 </div>
               )}
@@ -274,17 +284,26 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
   const handleChange = (k: string, v: string) => {
     let newData = { ...trFormData, [k]: v };
     if (k === 'birthday') newData.age = calculateAge(v);
+    
     if (k === 'entryDate') {
       const { end, renew } = calculateDates(v);
       newData.endDate = end;
       newData.renewStartDate = renew;
     }
-    // 区分変更の履歴保存ロジック（最新データの編集時のみ発動）
+    
     if (k === 'category' && isEditingTr && editingPhaseIdx === null) {
-      if (confirm("区分を変更します。変更前の現在のデータは履歴に保存されます。")) {
+      if (confirm("区分を変更します。現在のデータは履歴に保存され、最新の入力欄はクリアされます。")) {
         const archiveEntry = { ...trFormData };
         delete archiveEntry.phaseHistory;
+        
+        // 履歴に追加
         newData.phaseHistory = [...(trFormData.phaseHistory || []), archiveEntry];
+        
+        // 特定の項目をクリアして新しい区分での入力を促す
+        keysToClearOnNewPhase.forEach(key => {
+          newData[key] = "";
+        });
+        newData.period = "1年"; // 期間はリセットして1年に
       }
     }
     setTrFormData(newData);
@@ -296,7 +315,6 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
         <h2 style={{ fontSize: '18px', marginBottom: '30px', borderLeft: `4px solid ${colors.accent}`, paddingLeft: '15px' }}>
           {editingPhaseIdx !== null ? `履歴データの修正 (${trFormData.category}時)` : '実習生情報の登録・編集'}
         </h2>
-        {editingPhaseIdx !== null && <p style={{ color: 'red', fontSize: '12px', marginBottom: '20px' }}>※過去の履歴データを修正しています。ここでの変更は「最新データ」には反映されません。</p>}
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
           {!isEditingTr && (
@@ -329,7 +347,13 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
                   {genderOptions.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : (
-                <input type="text" value={trFormData[k] || ''} style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} onChange={e => handleChange(k, e.target.value)} />
+                <input 
+                  type="text" 
+                  value={trFormData[k] || ''} 
+                  placeholder={ (k === 'endDate' || k === 'renewStartDate') ? "自動で入力されます" : "" }
+                  style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} 
+                  onChange={e => handleChange(k, e.target.value)} 
+                />
               )}
             </div>
           ))}
@@ -342,7 +366,7 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
 
         <div style={{ marginTop: '30px', display: 'flex', gap: '15px' }}>
           <button onClick={handleSaveTrainee} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', flex: 2 }}>保存する</button>
-          <button onClick={() => { setShowTrForm(false); }} style={{ ...btnBase, backgroundColor: colors.lightGray, color: colors.text, flex: 1 }}>キャンセル</button>
+          <button onClick={() => setShowTrForm(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, color: colors.text, flex: 1 }}>キャンセル</button>
         </div>
       </div>
     </div>
