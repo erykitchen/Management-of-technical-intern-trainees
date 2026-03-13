@@ -50,8 +50,10 @@ const initialTraineeForm = {
 
 // --- 2. 便利関数 ---
 const calculateAge = (birthday: string) => {
-  if (!birthday) return "";
-  const birthDate = new Date(birthday);
+  if (!birthday || birthday.length < 8) return "";
+  const cleanDate = birthday.replace(/\//g, '-');
+  const birthDate = new Date(cleanDate);
+  if (isNaN(birthDate.getTime())) return "";
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
   const m = today.getMonth() - birthDate.getMonth();
@@ -60,10 +62,12 @@ const calculateAge = (birthday: string) => {
 };
 
 const calculateRenewDate = (endDate: string) => {
-  if (!endDate) return "";
-  const date = new Date(endDate);
+  if (!endDate || endDate.length < 8) return "";
+  const cleanDate = endDate.replace(/\//g, '-');
+  const date = new Date(cleanDate);
+  if (isNaN(date.getTime())) return "";
   date.setMonth(date.getMonth() - 3);
-  return date.toISOString().split('T')[0];
+  return date.toISOString().split('T')[0].replace(/-/g, '/');
 };
 
 const btnStyle = { padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 'bold' as 'bold' };
@@ -81,7 +85,7 @@ export default function Home() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [coFormData, setCoFormData] = useState<any>(initialCoForm);
   const [trFormData, setTrFormData] = useState<any>(initialTraineeForm);
-  const [memoData, setMemoData] = useState({ date: new Date().toISOString().split('T')[0], text: "", author: "政所", id: null as number | null });
+  const [memoData, setMemoData] = useState({ date: new Date().toLocaleDateString('ja-JP'), text: "", author: "政所", id: null as number | null });
 
   const fetchCompanies = async () => {
     const q = query(collection(db, "companies"), orderBy("createdAt", "desc"));
@@ -149,7 +153,7 @@ export default function Home() {
         newHistory.push({ ...memoData, id: Date.now() });
       }
       await updateDoc(docRef, { history: newHistory });
-      setMemoData({ date: new Date().toISOString().split('T')[0], text: "", author: "政所", id: null });
+      setMemoData({ date: new Date().toLocaleDateString('ja-JP'), text: "", author: "政所", id: null });
       fetchCompanies();
     } catch (e) { alert("メモ保存エラー"); }
   };
@@ -219,7 +223,7 @@ export default function Home() {
             <h3 style={{ fontSize: '14px', color: '#34a853', marginTop: 0 }}>対応履歴</h3>
             <div style={{ backgroundColor: '#f9f9f9', padding: '10px', borderRadius: '5px', marginBottom: '10px' }}>
               <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
-                <input type="date" value={memoData.date} onChange={e => setMemoData({...memoData, date: e.target.value})} style={{ fontSize: '11px' }} />
+                <input type="text" placeholder="2026/3/13" value={memoData.date} onChange={e => setMemoData({...memoData, date: e.target.value})} style={{ fontSize: '11px', width: '90px' }} />
                 <select value={memoData.author} onChange={e => setMemoData({...memoData, author: e.target.value})} style={{ fontSize: '11px' }}>
                   <option value="政所">政所</option><option value="朝比奈">朝比奈</option>
                 </select>
@@ -293,7 +297,16 @@ function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoFo
         <h2>企業 登録/編集</h2>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
           {Object.keys(labelMapCo).map(k => (
-            <div key={k}><label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapCo[k]}</label><input type={k.includes('Date') ? 'date' : 'text'} value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} onChange={e => setCoFormData({...coFormData, [k]: e.target.value})} /></div>
+            <div key={k}>
+              <label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapCo[k]}</label>
+              <input 
+                type="text" 
+                placeholder={k.includes('Date') ? '2026/03/13' : ''}
+                value={coFormData[k] || ''} 
+                style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} 
+                onChange={e => setCoFormData({...coFormData, [k]: e.target.value})} 
+              />
+            </div>
           ))}
         </div>
         <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}><button onClick={handleSaveCompany} style={{ ...btnStyle, backgroundColor: '#34a853', color: '#fff', flex: 2 }}>保存</button><button onClick={() => setShowCoForm(false)} style={{ ...btnStyle, backgroundColor: '#eee', flex: 1 }}>キャンセル</button></div>
@@ -305,8 +318,11 @@ function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoFo
 function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrForm, isEditingTr, companies }: any) {
   const handleChange = (k: string, v: string) => {
     let newData = { ...trFormData, [k]: v };
+    
+    // 日付が入力されたら自動計算
     if (k === 'birthday') newData.age = calculateAge(v);
     if (k === 'endDate') newData.renewStartDate = calculateRenewDate(v);
+    
     if (k === 'category' && isEditingTr) {
       if (confirm(`${v}へ変更しますか？現在の情報は履歴へ移動し、一部がリセットされます。`)) {
         const resetFields = ["status", "period", "stayLimit", "cardNumber", "certificateNumber", "applyDate", "certDate", "entryDate", "endDate", "renewStartDate"];
@@ -335,7 +351,6 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
             <div key={k}>
               <label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapTr[k]}</label>
               
-              {/* 国籍（プルダウン＋手入力） */}
               {k === 'nationality' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   <select 
@@ -343,11 +358,7 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
                     value={nationalityOptions.includes(trFormData[k]) ? trFormData[k] : (trFormData[k] ? "その他（手入力）" : "")} 
                     onChange={e => {
                       const val = e.target.value;
-                      if (val === "その他（手入力）") {
-                        handleChange(k, "");
-                      } else {
-                        handleChange(k, val);
-                      }
+                      if (val === "その他（手入力）") handleChange(k, ""); else handleChange(k, val);
                     }}
                   >
                     <option value="">-- 選択してください --</option>
@@ -364,7 +375,14 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
               ) : k === 'gender' ? (
                 <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}><option value="男">男</option><option value="女">女</option></select>
               ) : (
-                <input type={k.includes('Date') || k.includes('Limit') || k === 'birthday' ? 'date' : 'text'} value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', backgroundColor: (k==='age' || k==='renewStartDate') ? '#f0f0f0' : '#fff' }} readOnly={k==='age' || k==='renewStartDate'} onChange={e => handleChange(k, e.target.value)} />
+                <input 
+                  type="text" 
+                  placeholder={k.includes('Date') || k.includes('Limit') || k === 'birthday' ? '1995/10/04' : ''}
+                  value={trFormData[k] || ''} 
+                  style={{ width: '100%', padding: '8px', border: '1px solid #ddd', backgroundColor: (k==='age' || k==='renewStartDate') ? '#f0f0f0' : '#fff' }} 
+                  readOnly={k==='age' || k==='renewStartDate'} 
+                  onChange={e => handleChange(k, e.target.value)} 
+                />
               )}
             </div>
           ))}
