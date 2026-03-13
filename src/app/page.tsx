@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { db } from './firebase';
 import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc } from "firebase/firestore";
 
-// --- 1. 定義 ---
+// --- 1. ラベル・選択肢定義 ---
 const labelMapCo: { [key: string]: string } = {
   companyName: "会社名", settlement: "決算時期", representative: "代表者氏名", jobType: "職種（小分類）",
   zipCode: "郵便番号", address: "住所", tel: "TEL", joinedDate: "組合加入年月日",
@@ -32,11 +32,10 @@ const nationalityOptions = ["ベトナム", "中国", "インドネシア", "フ
 const statusOptions = ["選択する", "認定申請準備中", "認定手続中", "ビザ申請中", "入国待機", "実習中", "一時帰国中", "その他"];
 const genderOptions = ["男", "女"];
 
-// 区分変更時にクリアする項目リスト
+// 区分変更時にクリアする項目（ご指定の9項目）
 const keysToClearOnNewPhase = [
-  "stayLimit", "cardNumber", "certificateNumber", "applyDate", "certDate", 
-  "entryDate", "renewStartDate", "assignDate", "endDate", "moveDate", 
-  "returnDate", "employmentReportDate", "trainingStartDate", "trainingEndDate"
+  "status", "stayLimit", "cardNumber", "certificateNumber", 
+  "applyDate", "certDate", "entryDate", "endDate", "renewStartDate"
 ];
 
 const initialTraineeForm = {
@@ -69,7 +68,7 @@ const calculateDates = (entryDateStr: string) => {
   const date = new Date(entryDateStr.replace(/\//g, '-'));
   if (isNaN(date.getTime())) return { end: "", renew: "" };
   
-  // 終了日：入国日の前日の1年後（実質1年後の同日の前日）
+  // 終了日：実習開始日の前日の1年後
   const endDate = new Date(date);
   endDate.setFullYear(endDate.getFullYear() + 1);
   endDate.setDate(endDate.getDate() - 1);
@@ -82,7 +81,7 @@ const calculateDates = (entryDateStr: string) => {
   return { end: fmt(endDate), renew: fmt(renewDate) };
 };
 
-// --- 3. メイン ---
+// --- 3. メインコンポーネント ---
 export default function Home() {
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
@@ -107,7 +106,6 @@ export default function Home() {
 
   useEffect(() => { fetchCompanies(); }, []);
 
-  // 全実習実施者の合計受入人数（実習終了以外）を計算
   const totalActiveTrainees = companies.reduce((acc, co) => {
     const activeInCo = (co.trainees || []).filter((t: any) => t.category !== "実習終了").length;
     return acc + activeInCo;
@@ -279,7 +277,7 @@ export default function Home() {
   );
 }
 
-// --- 4. モーダル ---
+// --- 4. モーダルコンポーネント ---
 function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrForm, isEditingTr, companies, colors, editingPhaseIdx }: any) {
   const handleChange = (k: string, v: string) => {
     let newData = { ...trFormData, [k]: v };
@@ -292,18 +290,17 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
     }
     
     if (k === 'category' && isEditingTr && editingPhaseIdx === null) {
-      if (confirm("区分を変更します。現在のデータは履歴に保存され、最新の入力欄はクリアされます。")) {
+      if (confirm("区分を変更します。現在のデータは履歴に保存され、最新の入力欄は一部クリアされます。")) {
         const archiveEntry = { ...trFormData };
         delete archiveEntry.phaseHistory;
         
-        // 履歴に追加
         newData.phaseHistory = [...(trFormData.phaseHistory || []), archiveEntry];
         
-        // 特定の項目をクリアして新しい区分での入力を促す
+        // 指定された項目のみをクリア
         keysToClearOnNewPhase.forEach(key => {
-          newData[key] = "";
+          newData[key] = (key === "status") ? "選択する" : "";
         });
-        newData.period = "1年"; // 期間はリセットして1年に
+        newData.period = "1年"; 
       }
     }
     setTrFormData(newData);
