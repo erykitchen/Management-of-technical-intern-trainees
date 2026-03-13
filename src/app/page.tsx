@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { db } from './firebase';
 import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, arrayUnion } from "firebase/firestore";
 
-// --- ラベル定義 ---
+// --- 1. ラベル・選択肢の定義（コンポーネントの外へ） ---
 const labelMapCo: { [key: string]: string } = {
   settlement: "決算時期", companyName: "会社名", representative: "代表者氏名", jobType: "職種（小分類）",
   zipCode: "郵便番号", address: "住所", tel: "TEL", joinedDate: "組合加入年月日",
@@ -47,7 +47,7 @@ const initialTraineeForm = {
   trainingStartDate: "", trainingEndDate: "", phaseHistory: []
 };
 
-// --- 便利関数 ---
+// --- 2. 便利関数 ---
 const calculateAge = (birthday: string) => {
   if (!birthday) return "";
   const birthDate = new Date(birthday);
@@ -65,6 +65,9 @@ const calculateRenewDate = (endDate: string) => {
   return date.toISOString().split('T')[0];
 };
 
+const btnStyle = { padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 'bold' as 'bold' };
+
+// --- 3. メインコンポーネント ---
 export default function Home() {
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [showCoForm, setShowCoForm] = useState(false);
@@ -99,10 +102,8 @@ export default function Home() {
     try {
       if (isEditingCo && currentCo) {
         await updateDoc(doc(db, "companies", currentCo.id), coFormData);
-        alert("更新しました");
       } else {
         await addDoc(collection(db, "companies"), { ...coFormData, createdAt: new Date(), history: [], trainees: [] });
-        alert("登録しました");
       }
       setShowCoForm(false);
       fetchCompanies();
@@ -131,7 +132,6 @@ export default function Home() {
       }
 
       await updateDoc(docRef, { trainees: updatedTrainees });
-      alert("保存しました");
       setShowTrForm(false);
       fetchCompanies();
     } catch (e) { alert("保存エラー"); }
@@ -142,7 +142,6 @@ export default function Home() {
     try {
       const docRef = doc(db, "companies", currentCo.id);
       let newHistory = [...(currentCo.history || [])];
-      
       if (memoData.id) {
         newHistory = newHistory.map(h => h.id === memoData.id ? { ...memoData } : h);
       } else {
@@ -155,16 +154,13 @@ export default function Home() {
   };
 
   const deleteMemo = async (id: number) => {
-    if (!confirm("このメモを削除しますか？")) return;
-    try {
-      const docRef = doc(db, "companies", currentCo.id);
-      const newHistory = currentCo.history.filter((h: any) => h.id !== id);
-      await updateDoc(docRef, { history: newHistory });
-      fetchCompanies();
-    } catch (e) { alert("削除エラー"); }
+    if (!confirm("削除しますか？")) return;
+    const docRef = doc(db, "companies", currentCo.id);
+    const newHistory = currentCo.history.filter((h: any) => h.id !== id);
+    await updateDoc(docRef, { history: newHistory });
+    fetchCompanies();
   };
 
-  const btn = { padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 'bold' as 'bold' };
   const cBtn = { width: '22px', height: '22px', fontSize: '10px', cursor: 'pointer', backgroundColor: '#e1f5fe', border: '1px solid #03a9f4', borderRadius: '4px', marginLeft: '5px' };
 
   if (view === 'list') {
@@ -173,8 +169,8 @@ export default function Home() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h1 style={{ fontSize: '20px', borderLeft: '5px solid #1a73e8', paddingLeft: '15px' }}>監理団体 業務管理システム</h1>
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btn, backgroundColor: '#34a853', color: '#fff' }}>＋ 新規実習生登録</button>
-            <button onClick={() => { setCoFormData(initialCoForm); setIsEditingCo(false); setShowCoForm(true); }} style={{ ...btn, backgroundColor: '#1a73e8', color: '#fff' }}>＋ 新規実施者登録</button>
+            <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnStyle, backgroundColor: '#34a853', color: '#fff' }}>＋ 新規実習生登録</button>
+            <button onClick={() => { setCoFormData(initialCoForm); setIsEditingCo(false); setShowCoForm(true); }} style={{ ...btnStyle, backgroundColor: '#1a73e8', color: '#fff' }}>＋ 新規実施者登録</button>
           </div>
         </div>
         <div style={{ display: 'grid', gap: '10px' }}>
@@ -188,8 +184,8 @@ export default function Home() {
             </div>
           ))}
         </div>
-        {showCoForm && <CoFormModal />}
-        {showTrForm && <TrFormModal />}
+        {showCoForm && <CoFormModal coFormData={coFormData} setCoFormData={setCoFormData} handleSaveCompany={handleSaveCompany} setShowCoForm={setShowCoForm} />}
+        {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} />}
       </main>
     );
   }
@@ -202,8 +198,8 @@ export default function Home() {
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '2px solid #333', paddingBottom: '10px' }}>
         <h1>{currentCo.companyName}</h1>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => { setCoFormData(currentCo); setIsEditingCo(true); setShowCoForm(true); }} style={{ ...btn, backgroundColor: '#ff9800', color: '#fff' }}>企業編集</button>
-          <button onClick={() => { setTrFormData({ ...initialTraineeForm, targetCompanyId: currentCo.id }); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btn, backgroundColor: '#1a73e8', color: '#fff' }}>＋ 実習生追加</button>
+          <button onClick={() => { setCoFormData(currentCo); setIsEditingCo(true); setShowCoForm(true); }} style={{ ...btnStyle, backgroundColor: '#ff9800', color: '#fff' }}>企業編集</button>
+          <button onClick={() => { setTrFormData({ ...initialTraineeForm, targetCompanyId: currentCo.id }); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnStyle, backgroundColor: '#1a73e8', color: '#fff' }}>＋ 実習生追加</button>
         </div>
       </div>
 
@@ -211,16 +207,13 @@ export default function Home() {
         <aside>
           <section style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '20px' }}>
             <h3 style={{ fontSize: '14px', color: '#1a73e8', marginTop: 0 }}>企業基本データ</h3>
-            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-              {Object.keys(labelMapCo).map(k => (
-                <div key={k} style={{ fontSize: '11px', borderBottom: '1px solid #eee', padding: '4px 0' }}>
-                  <div style={{ color: '#888', fontWeight: 'bold' }}>{labelMapCo[k]}</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{currentCo[k] || '-'}</span><button onClick={() => copy(currentCo[k])} style={cBtn}>C</button></div>
-                </div>
-              ))}
-            </div>
+            {Object.keys(labelMapCo).map(k => (
+              <div key={k} style={{ fontSize: '11px', borderBottom: '1px solid #eee', padding: '4px 0' }}>
+                <div style={{ color: '#888', fontWeight: 'bold' }}>{labelMapCo[k]}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{currentCo[k] || '-'}</span><button onClick={() => copy(currentCo[k])} style={cBtn}>C</button></div>
+              </div>
+            ))}
           </section>
-
           <section style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #ddd' }}>
             <h3 style={{ fontSize: '14px', color: '#34a853', marginTop: 0 }}>対応履歴</h3>
             <div style={{ backgroundColor: '#f9f9f9', padding: '10px', borderRadius: '5px', marginBottom: '10px' }}>
@@ -231,9 +224,7 @@ export default function Home() {
                 </select>
               </div>
               <textarea placeholder="メモを入力..." value={memoData.text} onChange={e => setMemoData({...memoData, text: e.target.value})} style={{ width: '100%', height: '50px', fontSize: '12px', marginBottom: '5px' }} />
-              <button onClick={handleSaveMemo} style={{ ...btn, backgroundColor: '#34a853', color: '#fff', width: '100%', fontSize: '11px' }}>
-                {memoData.id ? '更新' : '追加'}
-              </button>
+              <button onClick={handleSaveMemo} style={{ ...btnStyle, backgroundColor: '#34a853', color: '#fff', width: '100%', fontSize: '11px' }}>{memoData.id ? '更新' : '追加'}</button>
             </div>
             <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
               {(currentCo.history || []).slice().reverse().map((h: any) => (
@@ -259,7 +250,6 @@ export default function Home() {
               <button key={t.id} onClick={() => { setSelectedTrId(t.id); setActiveTab('current'); }} style={{ padding: '8px 15px', borderRadius: '20px', border: selectedTrId === t.id ? '2px solid #1a73e8' : '1px solid #ccc', backgroundColor: selectedTrId === t.id ? '#e8f0fe' : '#fff', cursor: 'pointer' }}>{t.traineeName}</button>
             ))}
           </div>
-
           {currentTrainee && (
             <div>
               <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #eee', marginBottom: '15px' }}>
@@ -268,14 +258,11 @@ export default function Home() {
                   <button key={idx} onClick={() => setActiveTab(idx)} style={{ padding: '10px', border: 'none', background: activeTab === idx ? '#555' : 'transparent', color: activeTab === idx ? '#fff' : '#666', cursor: 'pointer' }}>{h.category}時</button>
                 ))}
               </div>
-
               {(() => {
                 const data = activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab];
                 return (
                   <div style={{ position: 'relative' }}>
-                    {activeTab === 'current' && (
-                      <button onClick={() => { setTrFormData(currentTrainee); setIsEditingTr(true); setShowTrForm(true); }} style={{ position: 'absolute', right: 0, top: -45, backgroundColor: '#ff9800', color: '#fff', border: 'none', padding: '5px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>編集・更新</button>
-                    )}
+                    {activeTab === 'current' && <button onClick={() => { setTrFormData(currentTrainee); setIsEditingTr(true); setShowTrForm(true); }} style={{ position: 'absolute', right: 0, top: -45, backgroundColor: '#ff9800', color: '#fff', border: 'none', padding: '5px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>編集・更新</button>}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 30px' }}>
                       {Object.keys(labelMapTr).map(k => (
                         <div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f0f0f0', padding: '5px 0', fontSize: '13px' }}>
@@ -291,76 +278,75 @@ export default function Home() {
           )}
         </section>
       </div>
-
-      {showCoForm && <CoFormModal />}
-      {showTrForm && <TrFormModal />}
+      {showCoForm && <CoFormModal coFormData={coFormData} setCoFormData={setCoFormData} handleSaveCompany={handleSaveCompany} setShowCoForm={setShowCoForm} />}
+      {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} />}
     </main>
   );
+}
 
-  function CoFormModal() {
-    return (
-      <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 300, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-        <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', width: '95%', maxWidth: '1000px', maxHeight: '90vh', overflowY: 'auto' }}>
-          <h2>企業 登録/編集</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
-            {Object.keys(labelMapCo).map(k => (
-              <div key={k}><label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapCo[k]}</label><input type={k.includes('Date') ? 'date' : 'text'} value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} onChange={e => setCoFormData({...coFormData, [k]: e.target.value})} /></div>
-            ))}
-          </div>
-          <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}><button onClick={handleSaveCompany} style={{ ...btn, backgroundColor: '#34a853', color: '#fff', flex: 2 }}>保存</button><button onClick={() => setShowCoForm(false)} style={{ ...btn, backgroundColor: '#eee', flex: 1 }}>キャンセル</button></div>
+// --- 4. モーダル用コンポーネント（Homeの外へ出すことで入力不具合を解消） ---
+function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoForm }: any) {
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 300, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', width: '95%', maxWidth: '1000px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h2>企業 登録/編集</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
+          {Object.keys(labelMapCo).map(k => (
+            <div key={k}><label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapCo[k]}</label><input type={k.includes('Date') ? 'date' : 'text'} value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} onChange={e => setCoFormData({...coFormData, [k]: e.target.value})} /></div>
+          ))}
         </div>
+        <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}><button onClick={handleSaveCompany} style={{ ...btnStyle, backgroundColor: '#34a853', color: '#fff', flex: 2 }}>保存</button><button onClick={() => setShowCoForm(false)} style={{ ...btnStyle, backgroundColor: '#eee', flex: 1 }}>キャンセル</button></div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  function TrFormModal() {
-    const handleChange = (k: string, v: string) => {
-      let newData = { ...trFormData, [k]: v };
-      if (k === 'birthday') newData.age = calculateAge(v);
-      if (k === 'endDate') newData.renewStartDate = calculateRenewDate(v);
-      
-      if (k === 'category' && isEditingTr) {
-        if (confirm(`${v}へ変更しますか？現在の情報は履歴タブへ移動し、一部の項目がリセットされます。`)) {
-          const resetFields = ["status", "period", "stayLimit", "cardNumber", "certificateNumber", "applyDate", "certDate", "entryDate", "endDate", "renewStartDate"];
-          resetFields.forEach(f => newData[f] = "");
-          newData.status = "認定申請準備中";
-        } else { return; }
-      }
-      setTrFormData(newData);
-    };
+function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrForm, isEditingTr, companies }: any) {
+  const handleChange = (k: string, v: string) => {
+    let newData = { ...trFormData, [k]: v };
+    if (k === 'birthday') newData.age = calculateAge(v);
+    if (k === 'endDate') newData.renewStartDate = calculateRenewDate(v);
+    if (k === 'category' && isEditingTr) {
+      if (confirm(`${v}へ変更しますか？現在の情報は履歴へ移動し、一部がリセットされます。`)) {
+        const resetFields = ["status", "period", "stayLimit", "cardNumber", "certificateNumber", "applyDate", "certDate", "entryDate", "endDate", "renewStartDate"];
+        resetFields.forEach(f => newData[f] = "");
+        newData.status = "認定申請準備中";
+      } else { return; }
+    }
+    setTrFormData(newData);
+  };
 
-    return (
-      <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 300, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-        <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', width: '90%', maxWidth: '1000px', maxHeight: '90vh', overflowY: 'auto' }}>
-          <h2>実習生 登録/編集</h2>
-          {!isEditingTr && (
-            <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f0f7ff', borderRadius: '8px', border: '1px solid #1a73e8' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>所属先企業を選択</label>
-              <select style={{ width: '100%', padding: '10px' }} value={trFormData.targetCompanyId} onChange={e => setTrFormData({...trFormData, targetCompanyId: e.target.value})}>
-                <option value="">-- 企業を選択 --</option>
-                {companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
-              </select>
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 300, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', width: '90%', maxWidth: '1000px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h2>実習生 登録/編集</h2>
+        {!isEditingTr && (
+          <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f0f7ff', borderRadius: '8px', border: '1px solid #1a73e8' }}>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>所属先企業</label>
+            <select style={{ width: '100%', padding: '10px' }} value={trFormData.targetCompanyId} onChange={e => setTrFormData({...trFormData, targetCompanyId: e.target.value})}>
+              <option value="">-- 企業を選択 --</option>
+              {companies.map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+            </select>
+          </div>
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
+          {Object.keys(labelMapTr).map(k => (
+            <div key={k}>
+              <label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapTr[k]}</label>
+              {k === 'status' ? (
+                <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>{statusOptions.map(o => <option key={o} value={o}>{o}</option>)}</select>
+              ) : k === 'category' ? (
+                <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>{categoryOptions.map(o => <option key={o} value={o}>{o}</option>)}</select>
+              ) : k === 'gender' ? (
+                <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}><option value="男">男</option><option value="女">女</option></select>
+              ) : (
+                <input type={k.includes('Date') || k.includes('Limit') || k === 'birthday' ? 'date' : 'text'} value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', backgroundColor: (k==='age' || k==='renewStartDate') ? '#f0f0f0' : '#fff' }} readOnly={k==='age' || k==='renewStartDate'} onChange={e => handleChange(k, e.target.value)} />
+              )}
             </div>
-          )}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
-            {Object.keys(labelMapTr).map(k => (
-              <div key={k}>
-                <label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapTr[k]}</label>
-                {k === 'status' ? (
-                  <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>{statusOptions.map(o => <option key={o} value={o}>{o}</option>)}</select>
-                ) : k === 'category' ? (
-                  <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>{categoryOptions.map(o => <option key={o} value={o}>{o}</option>)}</select>
-                ) : k === 'gender' ? (
-                  <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}><option value="男">男</option><option value="女">女</option></select>
-                ) : (
-                  <input type={k.includes('Date') || k.includes('Limit') || k === 'birthday' ? 'date' : 'text'} value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', backgroundColor: (k==='age' || k==='renewStartDate') ? '#f0f0f0' : '#fff' }} readOnly={k==='age' || k==='renewStartDate'} onChange={e => handleChange(k, e.target.value)} />
-                )}
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}><button onClick={handleSaveTrainee} style={{ ...btn, backgroundColor: '#34a853', color: '#fff', flex: 2 }}>保存</button><button onClick={() => setShowTrForm(false)} style={{ ...btn, backgroundColor: '#eee', flex: 1 }}>キャンセル</button></div>
+          ))}
         </div>
+        <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}><button onClick={handleSaveTrainee} style={{ ...btnStyle, backgroundColor: '#34a853', color: '#fff', flex: 2 }}>保存</button><button onClick={() => setShowTrForm(false)} style={{ ...btnStyle, backgroundColor: '#eee', flex: 1 }}>キャンセル</button></div>
       </div>
-    );
-  }
+    </div>
+  );
 }
