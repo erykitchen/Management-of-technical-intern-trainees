@@ -5,10 +5,10 @@ import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signO
 import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 
 // --- 0. セキュリティ設定 ---
-// ここにお二人のメールアドレスを正確に入力してください
-const ALLOWED_EMAILS = ["tobefree000@gmail.com", "mandokoro.anc@gmail.com", "assistnet.coop@gmail.com"];
+// ここにログインを許可するメールアドレスを入れてください
+const ALLOWED_EMAILS = ["mandokoro.anc@gmail.com", "assistnet.coop@gmail.com"];
 
-// --- 1. ラベル定義 ---
+// --- 1. ラベル・選択肢・初期値定義 ---
 const labelMapCo: { [key: string]: string } = {
   companyName: "会社名", settlement: "決算時期", representative: "代表者氏名", jobType: "職種（小分類）",
   zipCode: "郵便番号", address: "住所", tel: "TEL", joinedDate: "組合加入年月日",
@@ -31,13 +31,6 @@ const labelMapTr: { [key: string]: string } = {
   assignDate: "配属日", endDate: "実習終了日", moveDate: "配属移動日", returnDate: "帰国日",
   employmentReportDate: "外国人雇用条件届出日", trainingStartDate: "講習開始日", trainingEndDate: "講習終了日"
 };
-
-const categoryOptions = ["技能実習1号", "技能実習2号(1)", "技能実習2号(2)", "特定技能", "実習終了"];
-const batchOptions = ["なし", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
-const nationalityOptions = ["ベトナム", "中国", "インドネシア", "フィリピン", "ミャンマー", "カンボジア", "タイ", "その他（手入力）"];
-const statusOptions = ["選択する", "認定申請準備中", "認定手続中", "ビザ申請中", "入国待機", "実習中", "一時帰国中", "その他"];
-const acceptanceOptions = ["選択する", "受入中", "無し"];
-const genderOptions = ["男", "女"];
 
 const batchColorMap: { [key: string]: string } = {
   "①": "#E3F2FD", "②": "#FFFDE7", "③": "#FFEBEE", "④": "#F3E5F5", "⑤": "#E8F5E9", "なし": "#FFFFFF"
@@ -102,9 +95,8 @@ export default function Home() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [trFormData, setTrFormData] = useState<any>(initialTraineeForm);
   const [coFormData, setCoFormData] = useState<any>(initialCompanyForm);
-  const [filterBatch, setFilterBatch] = useState<string>('すべて');
 
-  const colors = { main: '#FFF9F0', accent: '#F57C00', text: '#2C3E50', gray: '#95A5A6', lightGray: '#F2F2F2', border: '#E0E0E0', white: '#FFFFFF', danger: '#E74C3C' };
+  const colors = { main: '#FFF9F0', accent: '#F57C00', text: '#2C3E50', gray: '#95A5A6', lightGray: '#F2F2F2', border: '#E0E0E0', white: '#FFFFFF' };
   const sharpRadius = '4px';
   const btnBase = { padding: '10px 18px', borderRadius: sharpRadius, border: 'none', cursor: 'pointer', fontWeight: '600' as const, fontSize: '13px' };
 
@@ -129,7 +121,7 @@ export default function Home() {
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
-    try { await signInWithPopup(auth, provider); } catch (e) { alert("ログイン失敗。承認済みドメインを確認してください。"); }
+    try { await signInWithPopup(auth, provider); } catch (e) { alert("ログイン失敗。Firebaseの設定を確認してください。"); }
   };
 
   const handleLogout = () => signOut(auth);
@@ -260,7 +252,7 @@ export default function Home() {
   );
 }
 
-// --- コンポーネント定義 (漏れがないようにここに配置) ---
+// --- 部品（コンポーネント）定義 ---
 function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoForm, colors, btnBase, isEditing }: any) {
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
