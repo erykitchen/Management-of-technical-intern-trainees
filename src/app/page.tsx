@@ -1,9 +1,9 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { db } from './firebase';
-import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, arrayUnion } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc } from "firebase/firestore";
 
-// --- 1. ラベル・選択肢の定義（コンポーネントの外へ） ---
+// --- 1. ラベル・選択肢の定義 ---
 const labelMapCo: { [key: string]: string } = {
   settlement: "決算時期", companyName: "会社名", representative: "代表者氏名", jobType: "職種（小分類）",
   zipCode: "郵便番号", address: "住所", tel: "TEL", joinedDate: "組合加入年月日",
@@ -28,6 +28,7 @@ const labelMapTr: { [key: string]: string } = {
 
 const statusOptions = ["認定申請準備中", "認定申請中", "在留資格準備中", "在留資格申請中", "入国待ち", "入国後講習中", "実習中", "更新準備中", "更新手続き中", "終了", "帰国中", "終了予定", "待機中", "失踪", "その他"];
 const categoryOptions = ["技能実習1号", "技能実習2号(1)", "技能実習2号(2)", "特定技能"];
+const nationalityOptions = ["ベトナム", "中国", "インドネシア", "フィリピン", "ミャンマー", "カンボジア", "タイ", "その他（手入力）"];
 
 const initialCoForm = {
   settlement: "", companyName: "", representative: "", jobType: "", zipCode: "", address: "", tel: "",
@@ -156,7 +157,7 @@ export default function Home() {
   const deleteMemo = async (id: number) => {
     if (!confirm("削除しますか？")) return;
     const docRef = doc(db, "companies", currentCo.id);
-    const newHistory = currentCo.history.filter((h: any) => h.id !== id);
+    const newHistory = (currentCo.history || []).filter((h: any) => h.id !== id);
     await updateDoc(docRef, { history: newHistory });
     fetchCompanies();
   };
@@ -284,7 +285,7 @@ export default function Home() {
   );
 }
 
-// --- 4. モーダル用コンポーネント（Homeの外へ出すことで入力不具合を解消） ---
+// --- 4. モーダルコンポーネント ---
 function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoForm }: any) {
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 300, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
@@ -333,7 +334,30 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
           {Object.keys(labelMapTr).map(k => (
             <div key={k}>
               <label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapTr[k]}</label>
-              {k === 'status' ? (
+              
+              {/* 国籍（プルダウン＋手入力） */}
+              {k === 'nationality' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <select 
+                    style={{ width: '100%', padding: '8px' }} 
+                    value={nationalityOptions.includes(trFormData[k]) ? trFormData[k] : (trFormData[k] ? "その他（手入力）" : "")} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "その他（手入力）") {
+                        handleChange(k, "");
+                      } else {
+                        handleChange(k, val);
+                      }
+                    }}
+                  >
+                    <option value="">-- 選択してください --</option>
+                    {nationalityOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  {(!nationalityOptions.includes(trFormData[k]) || trFormData[k] === "その他（手入力）") && (
+                    <input type="text" placeholder="国籍を入力" value={trFormData[k] === "その他（手入力）" ? "" : trFormData[k]} style={{ width: '100%', padding: '8px', border: '1px solid #1a73e8' }} onChange={e => handleChange(k, e.target.value)} />
+                  )}
+                </div>
+              ) : k === 'status' ? (
                 <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>{statusOptions.map(o => <option key={o} value={o}>{o}</option>)}</select>
               ) : k === 'category' ? (
                 <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>{categoryOptions.map(o => <option key={o} value={o}>{o}</option>)}</select>
