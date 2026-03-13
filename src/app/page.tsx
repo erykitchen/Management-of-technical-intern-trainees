@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { db } from './firebase';
 import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc } from "firebase/firestore";
 
-// --- 1. 定義・ラベル ---
+// --- 1. ラベル・選択肢定義 ---
 const labelMapCo: { [key: string]: string } = {
   companyName: "会社名", settlement: "決算時期", representative: "代表者氏名", jobType: "職種（小分類）",
   zipCode: "郵便番号", address: "住所", tel: "TEL", joinedDate: "組合加入年月日",
@@ -26,23 +26,24 @@ const labelMapTr: { [key: string]: string } = {
   employmentReportDate: "外国人雇用条件届出日", trainingStartDate: "講習開始日", trainingEndDate: "講習終了日"
 };
 
-// 終了時に表示する項目リスト
 const endDisplayKeys = ["traineeName", "kana", "category", "nationality", "birthday", "age", "gender"];
 
 const categoryOptions = ["技能実習1号", "技能実習2号(1)", "技能実習2号(2)", "特定技能", "実習終了"];
 const nationalityOptions = ["ベトナム", "中国", "インドネシア", "フィリピン", "ミャンマー", "カンボジア", "タイ", "その他（手入力）"];
+const statusOptions = ["選択する", "認定申請準備中", "認定手続中", "ビザ申請中", "入国待機", "実習中", "一時帰国中", "その他"];
+const genderOptions = ["男", "女"];
 
 const initialTraineeForm = {
-  targetCompanyId: "", status: "認定申請準備中", traineeName: "", kana: "", 
+  targetCompanyId: "", status: "選択する", traineeName: "", kana: "", 
   traineeZip: "", traineeAddress: "", category: "技能実習1号", nationality: "ベトナム",
-  birthday: "", age: "", gender: "男", period: "", stayLimit: "",
+  birthday: "", age: "", gender: "男", period: "1年", stayLimit: "", 
   cardNumber: "", passportLimit: "", passportNumber: "", certificateNumber: "",
   applyDate: "", certDate: "", entryDate: "", renewStartDate: "", assignDate: "",
   endDate: "", moveDate: "", returnDate: "", employmentReportDate: "",
   trainingStartDate: "", trainingEndDate: "", memo: "", phaseHistory: []
 };
 
-// --- 2. スタイル設定 ---
+// --- 2. スタイル・便利関数 ---
 const colors = { 
   main: '#FFF9F0', accent: '#F57C00', text: '#2C3E50', 
   gray: '#95A5A6', lightGray: '#F2F2F2', border: '#E0E0E0', white: '#FFFFFF'
@@ -52,7 +53,6 @@ const sharpRadius = '4px';
 const btnBase = { padding: '10px 18px', borderRadius: sharpRadius, border: 'none', cursor: 'pointer', fontWeight: '600' as const, fontSize: '13px', transition: 'all 0.2s' };
 const grayCBtn = { width: '20px', height: '20px', fontSize: '9px', cursor: 'pointer', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: '3px', color: colors.gray, marginLeft: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 
-// --- 3. 便利関数 ---
 const calculateAge = (birthday: string) => {
   if (!birthday) return "";
   const birthDate = new Date(birthday.replace(/\//g, '-'));
@@ -75,7 +75,7 @@ const calculateDates = (entryDateStr: string) => {
   return { end: fmt(endDate), renew: fmt(renewDate) };
 };
 
-// --- 4. メイン ---
+// --- 3. メインコンポーネント ---
 export default function Home() {
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
@@ -101,26 +101,28 @@ export default function Home() {
 
   const copy = (text: string) => { if (text) navigator.clipboard.writeText(text); };
 
-  const handleSaveTrainee = async (specificData?: any) => {
-    const dataToSave = specificData || trFormData;
-    const targetId = isEditingTr ? currentCo.id : dataToSave.targetCompanyId;
-    if (!targetId) return;
+  const handleSaveTrainee = async () => {
+    const targetId = isEditingTr ? currentCo.id : trFormData.targetCompanyId;
+    if (!targetId) { alert("会社を選択してください"); return; }
     try {
       const docRef = doc(db, "companies", targetId);
       const targetCo = companies.find(c => c.id === targetId);
       let updatedTrainees = [...(targetCo.trainees || [])];
-      if (isEditingTr || specificData) {
-        updatedTrainees = updatedTrainees.map((t: any) => t.id === dataToSave.id ? dataToSave : t);
+      
+      if (isEditingTr) {
+        updatedTrainees = updatedTrainees.map((t: any) => t.id === trFormData.id ? trFormData : t);
       } else {
-        const { targetCompanyId, ...saveData } = dataToSave;
+        const { targetCompanyId, ...saveData } = trFormData;
         updatedTrainees = [...updatedTrainees, { ...saveData, id: Date.now(), phaseHistory: [] }];
       }
+      
       await updateDoc(docRef, { trainees: updatedTrainees });
       setShowTrForm(false);
       fetchCompanies();
-    } catch (e) { alert("保存エラー"); }
+    } catch (e) { alert("保存エラーが発生しました"); }
   };
 
+  // 一覧画面
   if (view === 'list') {
     return (
       <main style={{ padding: '40px', backgroundColor: '#F9F9F9', minHeight: '100vh', color: colors.text }}>
@@ -143,11 +145,12 @@ export default function Home() {
             </div>
           ))}
         </div>
-        {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={() => handleSaveTrainee()} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} colors={colors} />}
+        {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} colors={colors} />}
       </main>
     );
   }
 
+  // 詳細画面
   const currentTrainee = currentCo.trainees?.find((t: any) => t.id === selectedTrId);
   const isTerminated = currentTrainee?.category === "実習終了";
 
@@ -228,28 +231,22 @@ export default function Home() {
 
               {isTerminated && activeTab === 'current' && (
                 <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: `2px solid ${colors.main}` }}>
-                  <label style={{ fontSize: '12px', fontWeight: 'bold', color: colors.gray, display: 'block', marginBottom: '10px' }}>メモ欄</label>
-                  <textarea 
-                    value={currentTrainee.memo || ""} 
-                    onChange={(e) => {
-                      const updated = { ...currentTrainee, memo: e.target.value };
-                      handleSaveTrainee(updated);
-                    }}
-                    placeholder="終了後の状況など、自由に入力してください..."
-                    style={{ width: '100%', minHeight: '120px', padding: '15px', border: `1px solid ${colors.border}`, borderRadius: sharpRadius, fontSize: '14px', lineHeight: '1.6' }}
-                  />
+                  <label style={{ fontSize: '12px', fontWeight: 'bold', color: colors.gray, display: 'block', marginBottom: '10px' }}>メモ</label>
+                  <div style={{ width: '100%', minHeight: '80px', padding: '15px', backgroundColor: '#F9F9F9', border: `1px solid ${colors.border}`, borderRadius: sharpRadius, fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: colors.text }}>
+                    {currentTrainee.memo || "（メモはありません。右上の編集ボタンから追加できます）"}
+                  </div>
                 </div>
               )}
             </div>
           )}
         </section>
       </div>
-      {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={() => handleSaveTrainee()} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} colors={colors} />}
+      {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} colors={colors} />}
     </main>
   );
 }
 
-// --- 5. モーダル ---
+// --- 4. モーダルコンポーネント ---
 function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrForm, isEditingTr, companies, colors }: any) {
   const handleChange = (k: string, v: string) => {
     let newData = { ...trFormData, [k]: v };
@@ -274,6 +271,7 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
       <div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: sharpRadius, width: '90%', maxWidth: '1100px', maxHeight: '90vh', overflowY: 'auto' }}>
         <h2 style={{ fontSize: '18px', marginBottom: '30px', borderLeft: `4px solid ${colors.accent}`, paddingLeft: '15px' }}>実習生情報の登録・編集</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
+          
           {!isEditingTr && (
             <div style={{ gridColumn: 'span 3', padding: '10px', backgroundColor: '#F0F7FF', borderRadius: sharpRadius, marginBottom: '10px' }}>
               <label style={{ fontSize: '11px', color: '#0070F3', fontWeight: 'bold', display: 'block' }}>受入企業を選択</label>
@@ -283,30 +281,46 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
               </select>
             </div>
           )}
+
           {Object.keys(labelMapTr).map(k => (
             <div key={k} style={{ padding: '8px 12px', backgroundColor: '#FBFBFB', border: '1px solid #EEE', borderRadius: sharpRadius }}>
               <label style={{ fontSize: '11px', color: colors.gray, fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>{labelMapTr[k]}</label>
-              { k === 'nationality' ? (
+              
+              { k === 'status' ? (
                 <select style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
-                  {nationalityOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                  {statusOptions.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : k === 'category' ? (
                 <select style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
                   {categoryOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : k === 'nationality' ? (
+                <select style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                  {nationalityOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : k === 'gender' ? (
+                <select style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                  {genderOptions.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : (
                 <input type="text" value={trFormData[k] || ''} style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} onChange={e => handleChange(k, e.target.value)} />
               )}
             </div>
           ))}
-          {/* モーダル内にも一応メモ欄を配置 */}
+
           <div style={{ gridColumn: 'span 3', padding: '8px 12px', backgroundColor: '#FBFBFB', border: '1px solid #EEE', borderRadius: sharpRadius }}>
             <label style={{ fontSize: '11px', color: colors.gray, fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>メモ</label>
-            <textarea value={trFormData.memo || ''} style={{ width: '100%', padding: '6px', border: '1px solid #ddd', minHeight: '60px' }} onChange={e => handleChange('memo', e.target.value)} />
+            <textarea 
+              value={trFormData.memo || ''} 
+              style={{ width: '100%', padding: '8px', border: '1px solid #ddd', minHeight: '100px', fontSize: '14px' }} 
+              onChange={e => handleChange('memo', e.target.value)} 
+              placeholder="終了後の状況など、自由に入力してください"
+            />
           </div>
         </div>
+
         <div style={{ marginTop: '30px', display: 'flex', gap: '15px' }}>
-          <button onClick={() => handleSaveTrainee()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', flex: 2 }}>保存する</button>
+          <button onClick={handleSaveTrainee} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', flex: 2 }}>保存する</button>
           <button onClick={() => setShowTrForm(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, color: colors.text, flex: 1 }}>キャンセル</button>
         </div>
       </div>
