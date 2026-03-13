@@ -6,7 +6,7 @@ import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, deleteDoc,
 
 // --- 0. セキュリティ設定 ---
 // ここにお二人のメールアドレスを正確に入力してください
-const ALLOWED_EMAILS = ["your-email@gmail.com", "boss-email@gmail.com"];
+const ALLOWED_EMAILS = ["tobefree000@gmail.com", "mandokoro.anc@gmail.com", "assistnet.coop@gmail.com"];
 
 // --- 1. ラベル定義 ---
 const labelMapCo: { [key: string]: string } = {
