@@ -32,7 +32,6 @@ const nationalityOptions = ["ベトナム", "中国", "インドネシア", "フ
 const statusOptions = ["選択する", "認定申請準備中", "認定手続中", "ビザ申請中", "入国待機", "実習中", "一時帰国中", "その他"];
 const genderOptions = ["男", "女"];
 
-// 区分変更時にクリアする項目（ご指定の9項目）
 const keysToClearOnNewPhase = [
   "status", "stayLimit", "cardNumber", "certificateNumber", 
   "applyDate", "certDate", "entryDate", "endDate", "renewStartDate"
@@ -68,16 +67,24 @@ const calculateDates = (entryDateStr: string) => {
   const date = new Date(entryDateStr.replace(/\//g, '-'));
   if (isNaN(date.getTime())) return { end: "", renew: "" };
   
-  // 終了日：実習開始日の前日の1年後
-  const endDate = new Date(date);
-  endDate.setFullYear(endDate.getFullYear() + 1);
-  endDate.setDate(endDate.getDate() - 1);
+  // 1年後の同日を取得
+  const nextYear = new Date(date);
+  nextYear.setFullYear(nextYear.getFullYear() + 1);
   
-  // 更新開始日：終了日の3ヶ月前
+  // その1日前を終了日とする
+  const endDate = new Date(nextYear);
+  endDate.setDate(nextYear.getDate() - 1);
+  
   const renewDate = new Date(endDate);
   renewDate.setMonth(renewDate.getMonth() - 3);
   
-  const fmt = (d: Date) => d.toISOString().split('T')[0].replace(/-/g, '/');
+  const fmt = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}/${m}/${day}`;
+  };
+
   return { end: fmt(endDate), renew: fmt(renewDate) };
 };
 
@@ -296,7 +303,6 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
         
         newData.phaseHistory = [...(trFormData.phaseHistory || []), archiveEntry];
         
-        // 指定された項目のみをクリア
         keysToClearOnNewPhase.forEach(key => {
           newData[key] = (key === "status") ? "選択する" : "";
         });
