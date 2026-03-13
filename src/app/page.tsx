@@ -306,7 +306,6 @@ export default function Home() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', flex: 1, backgroundColor: colors.border, gap: '1px' }}>
         <aside style={{ backgroundColor: '#FFF', padding: '30px', overflowY: 'auto', maxHeight: 'calc(100vh - 65px)' }}>
-          {/* ★会社名クリックでGoogle検索 */}
           <h2 style={{ fontSize: '18px', marginBottom: '20px', borderBottom: `2px solid ${colors.main}`, paddingBottom: '10px' }}>
             <a 
               href={`https://www.google.com/search?q=${encodeURIComponent(currentCo.companyName)}`} 
@@ -336,7 +335,6 @@ export default function Home() {
                   <h3 style={{ fontSize: '14px', color: colors.gray }}>実習生一覧</h3>
                   <div style={{ display: 'flex', gap: '4px', backgroundColor: colors.lightGray, padding: '3px', borderRadius: '6px' }}>
                     <button onClick={() => setFilterBatch('すべて')} style={{ padding: '4px 10px', fontSize: '11px', border: 'none', borderRadius: '4px', cursor: 'pointer', backgroundColor: filterBatch === 'すべて' ? colors.white : 'transparent', color: filterBatch === 'すべて' ? colors.accent : colors.gray, fontWeight: filterBatch === 'すべて' ? 'bold' : 'normal', boxShadow: filterBatch === 'すべて' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>すべて</button>
-                    {/* ★実際に存在するバッチのみ、かつ「なし」以外を表示 */}
                     {batchOptions.filter(b => b !== "なし" && (currentCo.trainees || []).some((t: any) => t.batch === b)).map(b => (
                       <button key={b} onClick={() => setFilterBatch(b)} style={{ 
                         padding: '4px 10px', fontSize: '11px', border: 'none', borderRadius: '4px', cursor: 'pointer',
@@ -382,7 +380,6 @@ export default function Home() {
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '25px' }}>
                 <h3 style={{ fontSize: '20px' }}>{(activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]).traineeName}</h3>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  {/* ★区分変更取消ボタンを小さく、目立たなく */}
                   {activeTab === 'current' && currentTrainee.phaseHistory?.length > 0 && (
                     <button onClick={() => handleUndoPhaseChange(currentTrainee.id)} style={{ padding: '4px 10px', fontSize: '10px', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, color: colors.gray, borderRadius: '4px', cursor: 'pointer' }}>区分変更取消</button>
                   )}
@@ -424,4 +421,105 @@ export default function Home() {
   );
 }
 
-// モーダル部分は変更なしのため省略（前のコードと同様に使用可能です）
+// --- 4. モーダルコンポーネント ---
+function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoForm, colors, btnBase, isEditing }: any) {
+  const handleChange = (k: string, v: string) => setCoFormData({ ...coFormData, [k]: v });
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: '8px', width: '90%', maxWidth: '1100px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+        <h2 style={{ fontSize: '20px', marginBottom: '30px', borderLeft: `5px solid ${colors.accent}`, paddingLeft: '15px', fontWeight: 'bold' }}>{isEditing ? '会社情報の編集' : '新規実習実施者の登録'}</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
+          {Object.keys(labelMapCo).map(k => (
+            <div key={k} style={{ padding: '10px 15px', backgroundColor: '#F9F9F9', border: '1px solid #EEE', gridColumn: k === 'memo' ? 'span 3' : 'auto', borderRadius: '4px' }}>
+              <label style={{ fontSize: '11px', color: colors.gray, fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>{labelMapCo[k]}</label>
+              {k === 'acceptance' ? (
+                <select style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #CCC' }} value={coFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                  {acceptanceOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : k === 'memo' ? (
+                <textarea style={{ width: '100%', padding: '8px', minHeight: '100px', border: '1px solid #CCC', borderRadius: '4px' }} value={coFormData[k] || ''} onChange={e => handleChange(k, e.target.value)} />
+              ) : (
+                <input type="text" value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC', borderRadius: '4px' }} onChange={e => handleChange(k, e.target.value)} />
+              )}
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: '35px', display: 'flex', gap: '15px' }}>
+          <button onClick={handleSaveCompany} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', flex: 2, fontSize: '15px' }}>この内容で保存する</button>
+          <button onClick={() => setShowCoForm(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, color: colors.text, flex: 1 }}>キャンセル</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrForm, colors, btnBase, isEditingTr, companies, editingPhaseIdx, currentCoId }: any) {
+  const handleChange = (k: string, v: string) => {
+    let newData = { ...trFormData, [k]: v };
+    if (k === 'birthday') newData.age = calculateAge(v);
+    if (k === 'entryDate') {
+      const { end, renew } = calculateDates(v);
+      newData.endDate = end; newData.renewStartDate = renew;
+    }
+    if (k === 'category' && isEditingTr && editingPhaseIdx === null) {
+      if (confirm("区分を変更します。現在のデータは履歴に保存されます。")) {
+        const archiveEntry = { ...trFormData };
+        delete archiveEntry.phaseHistory;
+        newData.phaseHistory = [...(trFormData.phaseHistory || []), archiveEntry];
+        keysToClearOnNewPhase.forEach(key => { newData[key] = (key === "status") ? "選択する" : ""; });
+        newData.period = "1年"; 
+      }
+    }
+    setTrFormData(newData);
+  };
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: '8px', width: '90%', maxWidth: '1100px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+        <h2 style={{ fontSize: '20px', marginBottom: '30px', borderLeft: `5px solid ${colors.accent}`, paddingLeft: '15px', fontWeight: 'bold' }}>実習生情報の登録・編集</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
+          {!isEditingTr && (
+            <div style={{ gridColumn: 'span 3', padding: '15px', backgroundColor: '#F0F7FF', borderRadius: '4px', border: '1px solid #D0E3F7' }}>
+              <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>受入企業を選択</label>
+              <select style={{ width: '100%', padding: '10px', borderRadius: '4px' }} value={trFormData.targetCompanyId || currentCoId} onChange={e => handleChange('targetCompanyId', e.target.value)}>
+                <option value="">選択してください</option>
+                {companies.map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+              </select>
+            </div>
+          )}
+          {Object.keys(labelMapTr).map(k => (
+            <div key={k} style={{ padding: '10px 15px', backgroundColor: '#F9F9F9', border: '1px solid #EEE', borderRadius: '4px' }}>
+              <label style={{ fontSize: '11px', color: colors.gray, fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>{labelMapTr[k]}</label>
+              { k === 'status' ? (
+                <select style={{ width: '100%', padding: '8px', borderRadius: '4px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                  {statusOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : k === 'category' ? (
+                <select style={{ width: '100%', padding: '8px', borderRadius: '4px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)} disabled={editingPhaseIdx !== null}>
+                  {categoryOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : k === 'batch' ? (
+                <select style={{ width: '100%', padding: '8px', borderRadius: '4px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                  {batchOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : k === 'nationality' ? (
+                <select style={{ width: '100%', padding: '8px', borderRadius: '4px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                  {nationalityOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : k === 'gender' ? (
+                <select style={{ width: '100%', padding: '8px', borderRadius: '4px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                  {genderOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : (
+                <input type="text" value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC', borderRadius: '4px' }} onChange={e => handleChange(k, e.target.value)} />
+              )}
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: '35px', display: 'flex', gap: '15px' }}>
+          <button onClick={handleSaveTrainee} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', flex: 2, fontSize: '15px' }}>この内容で保存する</button>
+          <button onClick={() => setShowTrForm(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, color: colors.text, flex: 1 }}>キャンセル</button>
+        </div>
+      </div>
+    </div>
+  );
+}
