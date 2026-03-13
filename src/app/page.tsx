@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { db } from './firebase';
 import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, arrayUnion } from "firebase/firestore";
 
-// ラベル定義（省略なし）
+// ラベル定義
 const labelMapCo: { [key: string]: string } = {
   settlement: "決算時期", companyName: "会社名", representative: "代表者氏名", jobType: "職種（小分類）",
   zipCode: "郵便番号", address: "住所", tel: "TEL", joinedDate: "組合加入年月日",
@@ -16,7 +16,8 @@ const labelMapCo: { [key: string]: string } = {
 };
 
 const labelMapTr: { [key: string]: string } = {
-  status: "ステータス", traineeName: "実習生氏名", kana: "フリガナ", traineeAddress: "住所",
+  status: "ステータス", traineeName: "実習生氏名", kana: "フリガナ", 
+  traineeZip: "郵便番号", traineeAddress: "住所", // 郵便番号を追加
   category: "区分", nationality: "国籍", birthday: "生年月日", age: "年齢", gender: "性別",
   period: "期間", stayLimit: "在留期限", cardNumber: "在留カード番号", passportLimit: "パスポート期限",
   passportNumber: "パスポート番号", certificateNumber: "認定番号", applyDate: "申請日",
@@ -24,6 +25,11 @@ const labelMapTr: { [key: string]: string } = {
   assignDate: "配属日", endDate: "実習終了日", moveDate: "配属移動日", returnDate: "帰国日",
   employmentReportDate: "外国人雇用条件届出日", trainingStartDate: "講習開始日", trainingEndDate: "講習終了日"
 };
+
+// 選択肢の定義
+const statusOptions = ["認定申請準備中", "認定申請中", "在留資格準備中", "在留資格申請中", "入国待ち", "入国後講習中", "実習中", "更新準備中", "更新手続き中", "終了", "帰国中", "終了予定", "待機中", "失踪", "その他"];
+const categoryOptions = ["技能実習1号", "技能実習2号(1)", "技能実習2号(2)", "特定技能"];
+const genderOptions = ["男", "女"];
 
 const initialCoForm = {
   settlement: "", companyName: "", representative: "", jobType: "", zipCode: "", address: "", tel: "",
@@ -34,8 +40,8 @@ const initialCoForm = {
 };
 
 const initialTraineeForm = {
-  targetCompanyId: "", // 所属先企業を選択するためのフィールド
-  status: "実習中", traineeName: "", kana: "", traineeAddress: "", category: "1号",
+  targetCompanyId: "", status: "認定申請準備中", traineeName: "", kana: "", 
+  traineeZip: "", traineeAddress: "", category: "技能実習1号",
   nationality: "", birthday: "", age: "", gender: "男", period: "", stayLimit: "",
   cardNumber: "", passportLimit: "", passportNumber: "", certificateNumber: "",
   applyDate: "", certDate: "", entryDate: "", renewStartDate: "", assignDate: "",
@@ -61,7 +67,10 @@ export default function Home() {
     const querySnapshot = await getDocs(q);
     const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     setCompanies(data);
-    if (currentCo) setCurrentCo(data.find(c => c.id === currentCo.id));
+    if (currentCo) {
+      const updated = data.find(c => c.id === currentCo.id);
+      if (updated) setCurrentCo(updated);
+    }
   };
 
   useEffect(() => { fetchCompanies(); }, []);
@@ -73,73 +82,68 @@ export default function Home() {
     try {
       if (isEditingCo && currentCo) {
         await updateDoc(doc(db, "companies", currentCo.id), coFormData);
-        alert("更新しました");
+        alert("企業情報を更新しました");
       } else {
         await addDoc(collection(db, "companies"), { ...coFormData, createdAt: new Date(), history: [], trainees: [] });
         alert("企業を登録しました");
       }
       setShowCoForm(false);
       fetchCompanies();
-    } catch (e) { alert("エラーが発生しました"); }
+    } catch (e) { alert("保存エラー"); }
   };
 
   const handleSaveTrainee = async () => {
     const targetId = isEditingTr ? currentCo.id : trFormData.targetCompanyId;
     if (!targetId) return alert("所属先企業を選択してください");
-    if (!trFormData.traineeName) return alert("実習生氏名は必須です");
-
     try {
       const docRef = doc(db, "companies", targetId);
       const targetCo = companies.find(c => c.id === targetId);
       let updatedTrainees = targetCo.trainees || [];
-
       if (isEditingTr) {
         updatedTrainees = updatedTrainees.map((t: any) => t.id === trFormData.id ? trFormData : t);
       } else {
-        const { targetCompanyId, ...saveData } = trFormData; // 所属先IDを除いて保存
+        const { targetCompanyId, ...saveData } = trFormData;
         updatedTrainees = [...updatedTrainees, { ...saveData, id: Date.now() }];
       }
-
       await updateDoc(docRef, { trainees: updatedTrainees });
-      alert(isEditingTr ? "更新しました" : "実習生を登録しました");
+      alert("実習生情報を保存しました");
       setShowTrForm(false);
       fetchCompanies();
-    } catch (e) { alert("保存に失敗しました"); }
+    } catch (e) { alert("保存エラー"); }
+  };
+
+  const handleAddMemo = async () => {
+    if (!memoData.text) return alert("メモを入力してください");
+    try {
+      const docRef = doc(db, "companies", currentCo.id);
+      await updateDoc(docRef, { history: arrayUnion({ ...memoData, id: Date.now() }) });
+      setMemoData({ ...memoData, text: "" });
+      fetchCompanies();
+    } catch (e) { alert("メモ保存エラー"); }
   };
 
   const btn = { padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 'bold' as 'bold' };
   const cBtn = { width: '22px', height: '22px', fontSize: '10px', cursor: 'pointer', backgroundColor: '#e1f5fe', border: '1px solid #03a9f4', borderRadius: '4px', marginLeft: '5px' };
 
-  // --- トップページ（一覧画面） ---
+  // --- 一覧画面 ---
   if (view === 'list') {
     return (
       <main style={{ padding: '20px', backgroundColor: '#f0f2f5', minHeight: '100vh', fontFamily: 'sans-serif' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h1 style={{ fontSize: '20px', borderLeft: '5px solid #1a73e8', paddingLeft: '15px' }}>監理団体 業務管理システム</h1>
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btn, backgroundColor: '#34a853', color: '#fff' }}>
-              ＋ 新規実習生登録
-            </button>
-            <button onClick={() => { setCoFormData(initialCoForm); setIsEditingCo(false); setShowCoForm(true); }} style={{ ...btn, backgroundColor: '#1a73e8', color: '#fff' }}>
-              ＋ 新規実施者登録
-            </button>
+            <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btn, backgroundColor: '#34a853', color: '#fff' }}>＋ 新規実習生登録</button>
+            <button onClick={() => { setCoFormData(initialCoForm); setIsEditingCo(false); setShowCoForm(true); }} style={{ ...btn, backgroundColor: '#1a73e8', color: '#fff' }}>＋ 新規実施者登録</button>
           </div>
         </div>
-
-        <div style={{ display: 'grid', gap: '12px' }}>
+        <div style={{ display: 'grid', gap: '10px' }}>
           {companies.map(c => (
-            <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); }} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', cursor: 'pointer', border: '1px solid #ddd', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ fontWeight: 'bold', color: '#1a73e8', fontSize: '18px' }}>{c.companyName}</div>
-                  <div style={{ fontSize: '13px', color: '#666', marginTop: '5px' }}>実施者番号: {c.implementationNumber || '-'}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                   <span style={{ backgroundColor: '#e8f0fe', padding: '4px 12px', borderRadius: '15px', fontSize: '12px', color: '#1a73e8', fontWeight: 'bold' }}>
-                    実習生: {c.trainees?.length || 0}名
-                  </span>
-                </div>
+            <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); }} style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '8px', cursor: 'pointer', border: '1px solid #ddd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: 'bold', color: '#1a73e8', fontSize: '17px' }}>{c.companyName}</div>
+                <div style={{ fontSize: '12px', color: '#777' }}>実習生: {c.trainees?.length || 0}名</div>
               </div>
+              <div style={{ color: '#999', fontSize: '12px' }}>詳細を見る ＞</div>
             </div>
           ))}
         </div>
@@ -149,11 +153,11 @@ export default function Home() {
     );
   }
 
-  // --- 詳細画面（前回分を維持） ---
+  // --- 詳細画面 ---
   return (
     <main style={{ padding: '20px', fontFamily: 'sans-serif', backgroundColor: '#f0f2f5', minHeight: '100vh' }}>
       <button onClick={() => { setView('list'); setSelectedTrId(null); }} style={{ marginBottom: '20px', cursor: 'pointer' }}>← 一覧に戻る</button>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '2px solid #333', paddingBottom: '10px' }}>
         <h1>{currentCo.companyName}</h1>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button onClick={() => { setCoFormData(currentCo); setIsEditingCo(true); setShowCoForm(true); }} style={{ ...btn, backgroundColor: '#ff9800', color: '#fff' }}>企業編集</button>
@@ -161,55 +165,86 @@ export default function Home() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: '20px' }}>
         <aside>
+          <section style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '20px' }}>
+            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1a73e8' }}>企業データ</h3>
+            <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+              {Object.keys(labelMapCo).map(k => (
+                <div key={k} style={{ fontSize: '12px', marginBottom: '6px', borderBottom: '1px solid #f9f9f9' }}>
+                  <div style={{ color: '#888', fontWeight: 'bold' }}>{labelMapCo[k]}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{currentCo[k] || '-'}</span><button onClick={() => copy(currentCo[k])} style={cBtn}>C</button></div>
+                </div>
+              ))}
+            </div>
+          </section>
+
           <section style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #ddd' }}>
-            <h3 style={{ marginTop: 0 }}>企業基本情報</h3>
-            {Object.keys(labelMapCo).map(k => (
-              <div key={k} style={{ fontSize: '12px', marginBottom: '8px', borderBottom: '1px solid #eee' }}>
-                <div style={{ color: '#888' }}>{labelMapCo[k]}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{currentCo[k] || '-'}</span>{currentCo[k] && <button onClick={() => copy(currentCo[k])} style={cBtn}>C</button>}</div>
+            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#34a853' }}>対応履歴</h3>
+            <div style={{ backgroundColor: '#f9f9f9', padding: '10px', borderRadius: '5px', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
+                <input type="date" value={memoData.date} onChange={e => setMemoData({...memoData, date: e.target.value})} style={{ fontSize: '11px' }} />
+                <select value={memoData.author} onChange={e => setMemoData({...memoData, author: e.target.value})} style={{ fontSize: '11px' }}>
+                  <option value="政所">政所</option><option value="朝比奈">朝比奈</option>
+                </select>
               </div>
-            ))}
+              <textarea placeholder="メモを入力..." value={memoData.text} onChange={e => setMemoData({...memoData, text: e.target.value})} style={{ width: '100%', height: '50px', fontSize: '12px', marginBottom: '5px' }} />
+              <button onClick={handleAddMemo} style={{ ...btn, backgroundColor: '#34a853', color: '#fff', width: '100%', fontSize: '11px' }}>追加</button>
+            </div>
+            <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+              {(currentCo.history || []).slice().reverse().map((h: any) => (
+                <div key={h.id} style={{ padding: '8px', borderLeft: '3px solid #34a853', backgroundColor: '#f0f4f0', fontSize: '12px', marginBottom: '5px' }}>
+                  <div style={{ fontSize: '10px', color: '#666' }}>{h.date} | {h.author}</div>
+                  <div>{h.text}</div>
+                </div>
+              ))}
+            </div>
           </section>
         </aside>
+
         <section style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #ddd' }}>
           <h3>所属実習生</h3>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
             {(currentCo.trainees || []).map((t: any) => (
               <button key={t.id} onClick={() => setSelectedTrId(t.id)} style={{ padding: '8px 15px', borderRadius: '20px', border: selectedTrId === t.id ? '2px solid #1a73e8' : '1px solid #ccc', backgroundColor: selectedTrId === t.id ? '#e8f0fe' : '#fff', cursor: 'pointer' }}>{t.traineeName}</button>
             ))}
           </div>
           {selectedTrId && (
-            <div style={{ border: '1px solid #1a73e8', padding: '20px', borderRadius: '8px' }}>
+            <div style={{ border: '1px solid #1a73e8', borderRadius: '8px', padding: '15px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <h4 style={{ margin: 0 }}>実習生詳細</h4>
+                <h4 style={{ margin: 0 }}>実習生詳細：{currentCo.trainees.find((t:any)=>t.id===selectedTrId).traineeName}</h4>
                 <button onClick={() => { setTrFormData(currentCo.trainees.find((t:any)=>t.id===selectedTrId)); setIsEditingTr(true); setShowTrForm(true); }} style={{ ...btn, backgroundColor: '#ff9800', color: '#fff', fontSize: '11px' }}>編集</button>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 20px' }}>
                 {Object.keys(labelMapTr).map(k => {
                   const val = currentCo.trainees.find((t:any)=>t.id===selectedTrId)[k];
-                  return <div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #eee', fontSize: '13px' }}><span>{labelMapTr[k]}</span><span>{val || '-'} {val && <button onClick={() => copy(val)} style={cBtn}>C</button>}</span></div>;
+                  return (
+                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #eee', fontSize: '12px', padding: '4px 0' }}>
+                      <span style={{ fontWeight: 'bold', color: '#666' }}>{labelMapTr[k]}</span>
+                      <span>{val || '-'} {val && <button onClick={() => copy(val)} style={cBtn}>C</button>}</span>
+                    </div>
+                  );
                 })}
               </div>
             </div>
           )}
         </section>
       </div>
+
       {showCoForm && <CoFormModal />}
       {showTrForm && <TrFormModal />}
     </main>
   );
 
-  // --- モーダル ---
+  // モーダル
   function CoFormModal() {
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 300, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', width: '95%', maxWidth: '1000px', maxHeight: '90vh', overflowY: 'auto' }}>
-          <h2>企業登録/編集</h2>
+          <h2>企業 登録/編集</h2>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
             {Object.keys(labelMapCo).map(k => (
-              <div key={k}><label style={{ fontSize: '11px' }}>{labelMapCo[k]}</label><input type={k.includes('Date') ? 'date' : 'text'} value={coFormData[k] || ''} style={{ width: '100%', padding: '5px' }} onChange={e => setCoFormData({...coFormData, [k]: e.target.value})} /></div>
+              <div key={k}><label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapCo[k]}</label><input type={k.includes('Date') ? 'date' : 'text'} value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} onChange={e => setCoFormData({...coFormData, [k]: e.target.value})} /></div>
             ))}
           </div>
           <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}><button onClick={handleSaveCompany} style={{ ...btn, backgroundColor: '#34a853', color: '#fff', flex: 2 }}>保存</button><button onClick={() => setShowCoForm(false)} style={{ ...btn, backgroundColor: '#eee', flex: 1 }}>中止</button></div>
@@ -222,15 +257,11 @@ export default function Home() {
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 300, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', width: '90%', maxWidth: '1000px', maxHeight: '90vh', overflowY: 'auto' }}>
-          <h2>実習生登録/編集</h2>
+          <h2>実習生 登録/編集</h2>
           {!isEditingTr && (
             <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f0f7ff', borderRadius: '8px', border: '1px solid #1a73e8' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>所属先企業を選択してください</label>
-              <select 
-                style={{ width: '100%', padding: '10px', fontSize: '16px' }} 
-                value={trFormData.targetCompanyId} 
-                onChange={e => setTrFormData({...trFormData, targetCompanyId: e.target.value})}
-              >
+              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>所属先企業</label>
+              <select style={{ width: '100%', padding: '10px' }} value={trFormData.targetCompanyId} onChange={e => setTrFormData({...trFormData, targetCompanyId: e.target.value})}>
                 <option value="">-- 企業を選択 --</option>
                 {companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
               </select>
@@ -238,7 +269,27 @@ export default function Home() {
           )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
             {Object.keys(labelMapTr).map(k => (
-              <div key={k}><label style={{ fontSize: '11px' }}>{labelMapTr[k]}</label><input type={k.includes('Date') || k.includes('Limit') || k === 'birthday' ? 'date' : 'text'} value={trFormData[k] || ''} style={{ width: '100%', padding: '5px' }} onChange={e => setTrFormData({...trFormData, [k]: e.target.value})} /></div>
+              <div key={k}>
+                <label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapTr[k]}</label>
+                {/* ステータスのプルダウン化 */}
+                {k === 'status' ? (
+                  <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => setTrFormData({...trFormData, [k]: e.target.value})}>
+                    {statusOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                ) : /* 区分のプルダウン化 */
+                k === 'category' ? (
+                  <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => setTrFormData({...trFormData, [k]: e.target.value})}>
+                    {categoryOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                ) : /* 性別のプルダウン化 */
+                k === 'gender' ? (
+                  <select style={{ width: '100%', padding: '8px' }} value={trFormData[k]} onChange={e => setTrFormData({...trFormData, [k]: e.target.value})}>
+                    {genderOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                ) : (
+                  <input type={k.includes('Date') || k.includes('Limit') || k === 'birthday' ? 'date' : 'text'} value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} onChange={e => setTrFormData({...trFormData, [k]: e.target.value})} />
+                )}
+              </div>
             ))}
           </div>
           <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}><button onClick={handleSaveTrainee} style={{ ...btn, backgroundColor: '#34a853', color: '#fff', flex: 2 }}>保存</button><button onClick={() => setShowTrForm(false)} style={{ ...btn, backgroundColor: '#eee', flex: 1 }}>中止</button></div>
