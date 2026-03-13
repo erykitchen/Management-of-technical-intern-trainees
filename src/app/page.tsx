@@ -49,7 +49,7 @@ const initialTraineeForm = {
   trainingStartDate: "", trainingEndDate: "", memo: "", phaseHistory: []
 };
 
-// --- 2. 便利関数 (和暦・計算・アラート) ---
+// --- 2. 便利関数 ---
 const convertToAD = (str: string) => {
   if (!str || typeof str !== 'string') return str;
   let text = str.trim().replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
@@ -68,14 +68,14 @@ const convertToAD = (str: string) => {
   return text;
 };
 
-const checkAlert = (dateStr: string) => {
-  if (!dateStr) return false;
+const checkAlert = (dateStr: string, category: string) => {
+  if (!dateStr || category === "実習終了") return false;
   const target = new Date(convertToAD(dateStr).replace(/\//g, '-'));
   if (isNaN(target.getTime())) return false;
   const today = new Date();
   const limit = new Date();
   limit.setMonth(today.getMonth() + 1);
-  return target <= limit; // 1ヶ月以内ならアラート
+  return target <= limit; 
 };
 
 const calculateAge = (birthday: string) => {
@@ -157,6 +157,7 @@ export default function Home() {
   const handleDeleteCompany = async () => {
     if (!currentCo?.id) return;
     if (!confirm(`会社「${currentCo.companyName}」を削除しますか？`)) return;
+    if (!confirm(`本当によろしいですか？所属する実習生もすべて削除されます。この操作は取り消せません。`)) return;
     try {
       await deleteDoc(doc(db, "companies", currentCo.id));
       setView('list');
@@ -166,7 +167,7 @@ export default function Home() {
   };
 
   const handleSaveTrainee = async () => {
-    const targetId = isEditingTr ? currentCo.id : trFormData.targetCompanyId;
+    const targetId = isEditingTr ? (trFormData.targetCompanyId || currentCo.id) : trFormData.targetCompanyId;
     if (!targetId) { alert("会社を選択してください"); return; }
     const cleanedData = { ...trFormData };
     Object.keys(cleanedData).forEach(key => {
@@ -175,7 +176,7 @@ export default function Home() {
     try {
       const targetCo = companies.find(c => c.id === targetId);
       let updatedTrainees = [...(targetCo.trainees || [])];
-      if (isEditingTr) {
+      if (isEditingTr && trFormData.id) {
         updatedTrainees = updatedTrainees.map((t: any) => {
           if (t.id === trFormData.id) {
             if (editingPhaseIdx !== null) {
@@ -214,6 +215,11 @@ export default function Home() {
     } catch (e) { alert("取り消し失敗"); }
   };
 
+  // 全体の受入人数を計算
+  const totalActiveTrainees = companies.reduce((sum, c) => 
+    sum + (c.trainees || []).filter((t: any) => t.category !== "実習終了").length, 0
+  );
+
   if (view === 'list') {
     return (
       <main style={{ padding: '40px', backgroundColor: '#F9F9F9', minHeight: '100vh', color: colors.text }}>
@@ -221,6 +227,10 @@ export default function Home() {
           <div>
             <h1 style={{ fontSize: '24px', fontWeight: '800', letterSpacing: '0.05em' }}>アシストねっと協同組合</h1>
             <p style={{ fontSize: '12px', color: colors.gray, marginTop: '4px' }}>技能実習生管理システム</p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '12px', color: colors.gray, marginBottom: '5px' }}>組合全体受入人数</div>
+            <div style={{ fontSize: '24px', fontWeight: '800', color: colors.accent }}>{totalActiveTrainees} <span style={{ fontSize: '14px', color: colors.text }}>名</span></div>
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習生</button>
@@ -231,7 +241,7 @@ export default function Home() {
           {companies.map(c => {
             const trs = c.trainees || [];
             const activeCount = trs.filter((t: any) => t.category !== "実習終了").length;
-            const hasAlert = trs.some((t: any) => checkAlert(t.stayLimit) || checkAlert(t.passportLimit));
+            const hasAlert = trs.some((t: any) => checkAlert(t.stayLimit, t.category) || checkAlert(t.passportLimit, t.category));
             return (
               <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); }} style={{ backgroundColor: '#fff', padding: '24px', borderRadius: sharpRadius, border: hasAlert ? `2px solid ${colors.danger}` : `1px solid ${colors.border}`, cursor: 'pointer', position: 'relative', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                 <div style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: '10px' }}>{c.companyName}</div>
@@ -255,8 +265,16 @@ export default function Home() {
   return (
     <main style={{ backgroundColor: '#FBFBFB', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <nav style={{ padding: '15px 30px', backgroundColor: '#FFF', borderBottom: `1px solid ${colors.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <button onClick={() => { setView('list'); setSelectedTrId(null); }} style={{ background: 'none', border: 'none', color: colors.gray, cursor: 'pointer', fontWeight: 'bold' }}>← 一覧に戻る</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <button onClick={() => { setView('list'); setSelectedTrId(null); }} style={{ background: 'none', border: 'none', color: colors.gray, cursor: 'pointer', fontWeight: 'bold' }}>← 一覧に戻る</button>
+          {selectedTrId && (
+             <button onClick={() => setSelectedTrId(null)} style={{ background: 'none', border: 'none', color: colors.accent, cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}>/ {currentCo.companyName}</button>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: '10px' }}>
+          {!selectedTrId && (
+            <button onClick={() => { setTrFormData({...initialTraineeForm, targetCompanyId: currentCo.id}); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 実習生追加</button>
+          )}
           <button onClick={handleDeleteCompany} style={{ ...btnBase, backgroundColor: '#FFF', border: `1px solid ${colors.danger}`, color: colors.danger }}>会社削除</button>
           <button onClick={() => { setIsEditingCo(true); setCoFormData(currentCo); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>会社編集</button>
         </div>
@@ -279,7 +297,9 @@ export default function Home() {
         <section style={{ backgroundColor: '#FBFBFB', padding: '40px', overflowY: 'auto' }}>
           {!selectedTrId ? (
             <div>
-              <h3 style={{ fontSize: '14px', marginBottom: '20px', color: colors.gray }}>実習生一覧</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ fontSize: '14px', color: colors.gray }}>実習生一覧</h3>
+              </div>
               {categoryOptions.map(cat => {
                 const list = (currentCo.trainees || []).filter((t: any) => t.category === cat);
                 if (list.length === 0) return null;
@@ -288,9 +308,9 @@ export default function Home() {
                     <div style={{ fontSize: '11px', fontWeight: 'bold', color: cat === "実習終了" ? '#CCC' : colors.accent, marginBottom: '10px' }}>{cat}</div>
                     <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                       {list.map((t: any) => {
-                        const isAlert = checkAlert(t.stayLimit) || checkAlert(t.passportLimit);
+                        const isAlert = checkAlert(t.stayLimit, t.category) || checkAlert(t.passportLimit, t.category);
                         return (
-                          <button key={t.id} onClick={() => { setSelectedTrId(t.id); setActiveTab('current'); }} style={{ padding: '12px 24px', backgroundColor: '#FFF', border: isAlert ? `2px solid ${colors.danger}` : `1px solid ${colors.border}`, borderRadius: sharpRadius, cursor: 'pointer', fontWeight: 'bold' }}>
+                          <button key={t.id} onClick={() => { setSelectedTrId(t.id); setActiveTab('current'); }} style={{ padding: '12px 24px', backgroundColor: '#FFF', border: isAlert ? `2px solid ${colors.danger}` : `1px solid ${colors.border}`, borderRadius: sharpRadius, cursor: 'pointer', fontWeight: 'bold', color: cat === "実習終了" ? '#999' : colors.text }}>
                             {t.traineeName} {isAlert && "⚠️"}
                           </button>
                         );
@@ -324,7 +344,7 @@ export default function Home() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 50px' }}>
                 {Object.keys(labelMapTr).map(k => {
                   const data = activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number];
-                  const isAlertField = (k === 'stayLimit' || k === 'passportLimit') && checkAlert(data[k]);
+                  const isAlertField = (k === 'stayLimit' || k === 'passportLimit') && checkAlert(data[k], data.category);
                   return (
                     <div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid #F8F8F8`, padding: '10px 0', fontSize: '14px' }}>
                       <span style={{ color: colors.gray }}>{labelMapTr[k]}</span>
@@ -343,7 +363,7 @@ export default function Home() {
         </section>
       </div>
       {showCoForm && <CoFormModal coFormData={coFormData} setCoFormData={setCoFormData} handleSaveCompany={handleSaveCompany} setShowCoForm={setShowCoForm} colors={colors} btnBase={btnBase} isEditing={isEditingCo} />}
-      {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} colors={colors} btnBase={btnBase} isEditingTr={isEditingTr} companies={companies} editingPhaseIdx={editingPhaseIdx} />}
+      {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} colors={colors} btnBase={btnBase} isEditingTr={isEditingTr} companies={companies} editingPhaseIdx={editingPhaseIdx} currentCoId={currentCo?.id} />}
     </main>
   );
 }
@@ -381,7 +401,7 @@ function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoFo
 }
 
 // --- 5. 実習生用モーダル ---
-function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrForm, colors, btnBase, isEditingTr, companies, editingPhaseIdx }: any) {
+function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrForm, colors, btnBase, isEditingTr, companies, editingPhaseIdx, currentCoId }: any) {
   const handleChange = (k: string, v: string) => {
     let newData = { ...trFormData, [k]: v };
     if (k === 'birthday') newData.age = calculateAge(v);
@@ -408,7 +428,7 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
           {!isEditingTr && (
             <div style={{ gridColumn: 'span 3', padding: '15px', backgroundColor: '#F0F7FF', borderRadius: '4px', border: '1px solid #D0E3F7' }}>
               <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>受入企業を選択</label>
-              <select style={{ width: '100%', padding: '10px', borderRadius: '4px' }} value={trFormData.targetCompanyId} onChange={e => handleChange('targetCompanyId', e.target.value)}>
+              <select style={{ width: '100%', padding: '10px', borderRadius: '4px' }} value={trFormData.targetCompanyId || currentCoId} onChange={e => handleChange('targetCompanyId', e.target.value)}>
                 <option value="">選択してください</option>
                 {companies.map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
               </select>
