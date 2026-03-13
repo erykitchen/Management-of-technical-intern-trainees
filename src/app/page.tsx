@@ -7,26 +7,39 @@ import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc } from "fir
 const labelMapCo: { [key: string]: string } = {
   companyName: "会社名", settlement: "決算時期", representative: "代表者氏名", jobType: "職種（小分類）",
   zipCode: "郵便番号", address: "住所", tel: "TEL", joinedDate: "組合加入年月日",
-  employeeCount: "常勤職員数", investmentAmount: "出資金額", corporateNumber: "法人番号",
-  implementationNumber: "実習実施者番号", officeAddress: "技能実習生住所",
-  responsiblePerson: "技能実習責任者名", instructor: "技能実習指導員名", lifeInstructor: "生活指導員名"
+  employeeCount: "常勤職員数", acceptance: "技能実習生受け入れの有無", investmentCount: "出資口数",
+  investmentAmount: "出資金額", investmentPayDate: "出資金払込年月日", corporateNumber: "法人番号",
+  laborInsurance: "労働保険番号（14桁）", employmentInsurance: "雇用保険適応事業所番号（11桁）",
+  implementationNumber: "実習実施者番号", acceptanceDate: "実習実施者届出受理日",
+  industryCategory: "技能実習産業分類", officeZip: "事業所郵便番号", officeAddress: "技能実習生住所",
+  responsiblePerson: "技能実習責任者名", instructor: "技能実習指導員名", lifeInstructor: "生活指導員名", planInstructor: "技能実習計画指導員名"
 };
 
 const labelMapTr: { [key: string]: string } = {
   status: "ステータス", traineeName: "実習生氏名", kana: "フリガナ", 
+  traineeZip: "郵便番号", traineeAddress: "住所", 
   category: "区分", nationality: "国籍", birthday: "生年月日", age: "年齢", gender: "性別",
-  stayLimit: "在留期限", cardNumber: "在留カード番号", passportNumber: "パスポート番号",
-  entryDate: "実習開始日(入国日)", renewStartDate: "更新手続開始日", endDate: "実習終了日"
+  period: "期間", stayLimit: "在留期限", cardNumber: "在留カード番号", passportLimit: "パスポート期限",
+  passportNumber: "パスポート番号", certificateNumber: "認定番号", applyDate: "申請日",
+  certDate: "認定年月日", entryDate: "実習開始日(入国日)", renewStartDate: "更新手続開始日",
+  assignDate: "配属日", endDate: "実習終了日", moveDate: "配属移動日", returnDate: "帰国日",
+  employmentReportDate: "外国人雇用条件届出日", trainingStartDate: "講習開始日", trainingEndDate: "講習終了日"
 };
+
+// 終了時に表示する項目リスト
+const endDisplayKeys = ["traineeName", "kana", "category", "nationality", "birthday", "age", "gender"];
 
 const categoryOptions = ["技能実習1号", "技能実習2号(1)", "技能実習2号(2)", "特定技能", "実習終了"];
 const nationalityOptions = ["ベトナム", "中国", "インドネシア", "フィリピン", "ミャンマー", "カンボジア", "タイ", "その他（手入力）"];
 
 const initialTraineeForm = {
   targetCompanyId: "", status: "認定申請準備中", traineeName: "", kana: "", 
-  category: "技能実習1号", nationality: "ベトナム", birthday: "", age: "", gender: "男",
-  stayLimit: "", cardNumber: "", passportNumber: "",
-  entryDate: "", renewStartDate: "", endDate: "", phaseHistory: []
+  traineeZip: "", traineeAddress: "", category: "技能実習1号", nationality: "ベトナム",
+  birthday: "", age: "", gender: "男", period: "", stayLimit: "",
+  cardNumber: "", passportLimit: "", passportNumber: "", certificateNumber: "",
+  applyDate: "", certDate: "", entryDate: "", renewStartDate: "", assignDate: "",
+  endDate: "", moveDate: "", returnDate: "", employmentReportDate: "",
+  trainingStartDate: "", trainingEndDate: "", memo: "", phaseHistory: []
 };
 
 // --- 2. スタイル設定 ---
@@ -62,7 +75,7 @@ const calculateDates = (entryDateStr: string) => {
   return { end: fmt(endDate), renew: fmt(renewDate) };
 };
 
-// --- 4. メインコンポーネント ---
+// --- 4. メイン ---
 export default function Home() {
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
@@ -88,30 +101,24 @@ export default function Home() {
 
   const copy = (text: string) => { if (text) navigator.clipboard.writeText(text); };
 
-  const alerts = companies.flatMap(c => (c.trainees || []).map((t: any) => ({ ...t, companyName: c.companyName, companyId: c.id })))
-    .filter(t => {
-      if (t.category === "実習終了" || !t.renewStartDate) return false;
-      const diff = (new Date(t.renewStartDate.replace(/\//g, '-')).getTime() - new Date().getTime()) / (1000 * 86400);
-      return diff <= 30;
-    });
-
-  const handleSaveTrainee = async () => {
-    const targetId = isEditingTr ? currentCo.id : trFormData.targetCompanyId;
-    if (!targetId) { alert("会社を選択してください"); return; }
+  const handleSaveTrainee = async (specificData?: any) => {
+    const dataToSave = specificData || trFormData;
+    const targetId = isEditingTr ? currentCo.id : dataToSave.targetCompanyId;
+    if (!targetId) return;
     try {
       const docRef = doc(db, "companies", targetId);
       const targetCo = companies.find(c => c.id === targetId);
       let updatedTrainees = [...(targetCo.trainees || [])];
-      if (isEditingTr) {
-        updatedTrainees = updatedTrainees.map((t: any) => t.id === trFormData.id ? trFormData : t);
+      if (isEditingTr || specificData) {
+        updatedTrainees = updatedTrainees.map((t: any) => t.id === dataToSave.id ? dataToSave : t);
       } else {
-        const { targetCompanyId, ...saveData } = trFormData;
+        const { targetCompanyId, ...saveData } = dataToSave;
         updatedTrainees = [...updatedTrainees, { ...saveData, id: Date.now(), phaseHistory: [] }];
       }
       await updateDoc(docRef, { trainees: updatedTrainees });
       setShowTrForm(false);
       fetchCompanies();
-    } catch (e) { alert("保存エラーが発生しました"); }
+    } catch (e) { alert("保存エラー"); }
   };
 
   if (view === 'list') {
@@ -128,20 +135,6 @@ export default function Home() {
           </div>
         </header>
 
-        {alerts.length > 0 && (
-          <section style={{ marginBottom: '40px', padding: '24px', backgroundColor: '#FFF', border: `1px solid #FFEBEE`, borderLeft: `4px solid red` }}>
-            <h2 style={{ fontSize: '14px', color: 'red', marginTop: 0, marginBottom: '15px' }}>⚠️ 確認必須リスト</h2>
-            <div style={{ display: 'grid', gap: '10px' }}>
-              {alerts.map(t => (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '15px', fontSize: '13px' }}>
-                  <span onClick={() => { setCurrentCo(companies.find(c => c.id === t.companyId)); setView('detail'); setSelectedTrId(t.id); }} style={{ color: colors.accent, cursor: 'pointer', fontWeight: 'bold', textDecoration: 'underline' }}>{t.traineeName} ({t.companyName})</span>
-                  <span style={{ color: '#E53935' }}>理由：更新手続き期限が近い実習生（30日以内）</span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
           {companies.map(c => (
             <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); }} style={{ backgroundColor: '#fff', padding: '24px', borderRadius: sharpRadius, cursor: 'pointer', border: `1px solid ${colors.border}` }}>
@@ -150,12 +143,13 @@ export default function Home() {
             </div>
           ))}
         </div>
-        {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} colors={colors} />}
+        {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={() => handleSaveTrainee()} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} colors={colors} />}
       </main>
     );
   }
 
   const currentTrainee = currentCo.trainees?.find((t: any) => t.id === selectedTrId);
+  const isTerminated = currentTrainee?.category === "実習終了";
 
   return (
     <main style={{ backgroundColor: '#FBFBFB', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -165,9 +159,9 @@ export default function Home() {
       </nav>
 
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1px', backgroundColor: colors.border, flex: 1 }}>
-        <aside style={{ backgroundColor: '#FFF', padding: '30px' }}>
+        <aside style={{ backgroundColor: '#FFF', padding: '30px', overflowY: 'auto', maxHeight: 'calc(100vh - 65px)' }}>
           <div onClick={() => { setSelectedTrId(null); setActiveTab('current'); }} style={{ cursor: 'pointer', marginBottom: '30px' }}>
-            <h2 style={{ fontSize: '18px', margin: 0, borderBottom: `3px solid ${colors.main}`, paddingBottom: '10px', color: '#000', transition: 'color 0.2s' }} onMouseOver={(e) => e.currentTarget.style.color = colors.accent} onMouseOut={(e) => e.currentTarget.style.color = '#000'}>{currentCo.companyName}</h2>
+            <h2 style={{ fontSize: '18px', margin: 0, borderBottom: `3px solid ${colors.main}`, paddingBottom: '10px', color: '#000' }}>{currentCo.companyName}</h2>
           </div>
           {Object.keys(labelMapCo).map(k => (
             <div key={k} style={{ marginBottom: '12px', fontSize: '11px' }}>
@@ -180,7 +174,7 @@ export default function Home() {
           ))}
         </aside>
 
-        <section style={{ backgroundColor: '#FBFBFB', padding: '40px' }}>
+        <section style={{ backgroundColor: '#FBFBFB', padding: '40px', overflowY: 'auto', maxHeight: 'calc(100vh - 65px)' }}>
           {!selectedTrId ? (
             <div>
               <h3 style={{ fontSize: '14px', marginBottom: '20px', color: colors.gray }}>所属実習生一覧</h3>
@@ -208,18 +202,20 @@ export default function Home() {
               </div>
 
               <div style={{ display: 'flex', gap: '5px', marginBottom: '20px' }}>
-                <button onClick={() => setActiveTab('current')} style={{ padding: '8px 20px', border: 'none', background: activeTab === 'current' ? colors.main : 'none', color: colors.accent, fontWeight: 'bold', cursor: 'pointer' }}>最新データ</button>
+                <button onClick={() => setActiveTab('current')} style={{ padding: '8px 20px', border: 'none', background: activeTab === 'current' ? colors.main : 'none', color: colors.accent, fontWeight: 'bold', cursor: 'pointer' }}>
+                  {isTerminated ? "終了" : "最新データ"}
+                </button>
                 {[...(currentTrainee.phaseHistory || [])].reverse().map((h, idx) => {
                   const originalIdx = currentTrainee.phaseHistory.length - 1 - idx;
                   return <button key={idx} onClick={() => setActiveTab(originalIdx)} style={{ padding: '8px 20px', border: 'none', background: activeTab === originalIdx ? '#EEE' : 'none', color: '#999', cursor: 'pointer' }}>{h.category}時</button>;
                 })}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 40px' }}>
-                {Object.keys(labelMapTr).map(k => {
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 40px' }}>
+                {(isTerminated && activeTab === 'current' ? endDisplayKeys : Object.keys(labelMapTr)).map(k => {
                   const data = activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number];
                   return (
-                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid #F5F5F5`, padding: '10px 0', fontSize: '13px' }}>
+                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid #F5F5F5`, padding: '8px 0', fontSize: '13px' }}>
                       <span style={{ color: colors.gray }}>{labelMapTr[k]}</span>
                       <div style={{ display: 'flex', alignItems: 'center' }}>
                         <span style={{ fontWeight: 'bold' }}>{data[k] || '-'}</span>
@@ -229,16 +225,31 @@ export default function Home() {
                   );
                 })}
               </div>
+
+              {isTerminated && activeTab === 'current' && (
+                <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: `2px solid ${colors.main}` }}>
+                  <label style={{ fontSize: '12px', fontWeight: 'bold', color: colors.gray, display: 'block', marginBottom: '10px' }}>メモ欄</label>
+                  <textarea 
+                    value={currentTrainee.memo || ""} 
+                    onChange={(e) => {
+                      const updated = { ...currentTrainee, memo: e.target.value };
+                      handleSaveTrainee(updated);
+                    }}
+                    placeholder="終了後の状況など、自由に入力してください..."
+                    style={{ width: '100%', minHeight: '120px', padding: '15px', border: `1px solid ${colors.border}`, borderRadius: sharpRadius, fontSize: '14px', lineHeight: '1.6' }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </section>
       </div>
-      {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} colors={colors} />}
+      {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={() => handleSaveTrainee()} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} colors={colors} />}
     </main>
   );
 }
 
-// --- 5. サブコンポーネント (モーダル) ---
+// --- 5. モーダル ---
 function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrForm, isEditingTr, companies, colors }: any) {
   const handleChange = (k: string, v: string) => {
     let newData = { ...trFormData, [k]: v };
@@ -260,7 +271,7 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(2px)' }}>
-      <div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: sharpRadius, width: '90%', maxWidth: '1000px', maxHeight: '90vh', overflowY: 'auto' }}>
+      <div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: sharpRadius, width: '90%', maxWidth: '1100px', maxHeight: '90vh', overflowY: 'auto' }}>
         <h2 style={{ fontSize: '18px', marginBottom: '30px', borderLeft: `4px solid ${colors.accent}`, paddingLeft: '15px' }}>実習生情報の登録・編集</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
           {!isEditingTr && (
@@ -273,24 +284,29 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
             </div>
           )}
           {Object.keys(labelMapTr).map(k => (
-            <div key={k} style={{ padding: '10px', backgroundColor: '#FBFBFB', border: '1px solid #EEE', borderRadius: sharpRadius }}>
-              <label style={{ fontSize: '11px', color: colors.gray, fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>{labelMapTr[k]}</label>
+            <div key={k} style={{ padding: '8px 12px', backgroundColor: '#FBFBFB', border: '1px solid #EEE', borderRadius: sharpRadius }}>
+              <label style={{ fontSize: '11px', color: colors.gray, fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>{labelMapTr[k]}</label>
               { k === 'nationality' ? (
-                <select style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                <select style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
                   {nationalityOptions.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : k === 'category' ? (
-                <select style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                <select style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
                   {categoryOptions.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : (
-                <input type="text" value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} onChange={e => handleChange(k, e.target.value)} />
+                <input type="text" value={trFormData[k] || ''} style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} onChange={e => handleChange(k, e.target.value)} />
               )}
             </div>
           ))}
+          {/* モーダル内にも一応メモ欄を配置 */}
+          <div style={{ gridColumn: 'span 3', padding: '8px 12px', backgroundColor: '#FBFBFB', border: '1px solid #EEE', borderRadius: sharpRadius }}>
+            <label style={{ fontSize: '11px', color: colors.gray, fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>メモ</label>
+            <textarea value={trFormData.memo || ''} style={{ width: '100%', padding: '6px', border: '1px solid #ddd', minHeight: '60px' }} onChange={e => handleChange('memo', e.target.value)} />
+          </div>
         </div>
         <div style={{ marginTop: '30px', display: 'flex', gap: '15px' }}>
-          <button onClick={handleSaveTrainee} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', flex: 2 }}>保存する</button>
+          <button onClick={() => handleSaveTrainee()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', flex: 2 }}>保存する</button>
           <button onClick={() => setShowTrForm(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, color: colors.text, flex: 1 }}>キャンセル</button>
         </div>
       </div>
