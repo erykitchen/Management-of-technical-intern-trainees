@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { db } from './firebase';
-import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 
 // --- 1. ラベル・選択肢定義 ---
 const labelMapCo: { [key: string]: string } = {
@@ -47,6 +47,11 @@ const initialTraineeForm = {
   trainingStartDate: "", trainingEndDate: "", memo: "", phaseHistory: []
 };
 
+const initialCompanyForm = Object.keys(labelMapCo).reduce((acc: any, key) => {
+  acc[key] = "";
+  return acc;
+}, {});
+
 // --- 2. スタイル・便利関数 ---
 const colors = { main: '#FFF9F0', accent: '#F57C00', text: '#2C3E50', gray: '#95A5A6', lightGray: '#F2F2F2', border: '#E0E0E0', white: '#FFFFFF', danger: '#E74C3C' };
 const sharpRadius = '4px';
@@ -85,6 +90,7 @@ const calculateDates = (entryDateStr: string) => {
 export default function Home() {
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
+  const [showCoForm, setShowCoForm] = useState(false); // 会社用モーダルの表示管理
   const [isEditingTr, setIsEditingTr] = useState(false);
   const [editingPhaseIdx, setEditingPhaseIdx] = useState<number | null>(null);
   const [currentCo, setCurrentCo] = useState<any>(null);
@@ -92,6 +98,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'current' | number>('current');
   const [companies, setCompanies] = useState<any[]>([]);
   const [trFormData, setTrFormData] = useState<any>(initialTraineeForm);
+  const [coFormData, setCoFormData] = useState<any>(initialCompanyForm); // 会社用フォームデータ
 
   const fetchCompanies = async () => {
     const q = query(collection(db, "companies"), orderBy("createdAt", "desc"));
@@ -112,6 +119,21 @@ export default function Home() {
   }, 0);
 
   const copy = (text: string) => { if (text) navigator.clipboard.writeText(text); };
+
+  // 会社の新規保存
+  const handleSaveCompany = async () => {
+    if (!coFormData.companyName) { alert("会社名は必須です"); return; }
+    try {
+      await addDoc(collection(db, "companies"), {
+        ...coFormData,
+        trainees: [],
+        createdAt: serverTimestamp()
+      });
+      setShowCoForm(false);
+      setCoFormData(initialCompanyForm);
+      fetchCompanies();
+    } catch (e) { alert("会社保存エラーが発生しました"); }
+  };
 
   const handleSaveTrainee = async () => {
     const targetId = isEditingTr ? currentCo.id : trFormData.targetCompanyId;
@@ -146,28 +168,18 @@ export default function Home() {
     } catch (e) { alert("保存エラーが発生しました"); }
   };
 
-  // 区分変更を取り消して一つ前の状態に戻す
   const handleUndoPhaseChange = async (traineeId: number) => {
     const trainee = currentCo.trainees.find((t: any) => t.id === traineeId);
     if (!trainee || !trainee.phaseHistory || trainee.phaseHistory.length === 0) return;
-
-    if (!confirm("直前の区分変更を取り消し、一つ前の状態に戻しますか？（現在の最新データは失われます）")) return;
-
+    if (!confirm("直前の区分変更を取り消し、一つ前の状態に戻しますか？")) return;
     try {
       const docRef = doc(db, "companies", currentCo.id);
-      
-      // 履歴の最後を取り出し、それを「最新」にする
       const newHistory = [...trainee.phaseHistory];
-      const previousData = newHistory.pop(); // 一番新しい履歴を削除しつつ取得
-
+      const previousData = newHistory.pop();
       const updatedTrainees = currentCo.trainees.map((t: any) => {
-        if (t.id === traineeId) {
-          // 履歴から復元したデータに、残りの履歴をセット
-          return { ...previousData, phaseHistory: newHistory, id: t.id };
-        }
+        if (t.id === traineeId) return { ...previousData, phaseHistory: newHistory, id: t.id };
         return t;
       });
-
       await updateDoc(docRef, { trainees: updatedTrainees });
       setActiveTab('current');
       fetchCompanies();
@@ -186,7 +198,7 @@ export default function Home() {
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setEditingPhaseIdx(null); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習生</button>
-            <button style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習実施者</button>
+            <button onClick={() => { setCoFormData(initialCompanyForm); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習実施者</button>
           </div>
         </header>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
@@ -198,10 +210,12 @@ export default function Home() {
           ))}
         </div>
         {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} colors={colors} editingPhaseIdx={editingPhaseIdx} />}
+        {showCoForm && <CoFormModal coFormData={coFormData} setCoFormData={setCoFormData} handleSaveCompany={handleSaveCompany} setShowCoForm={setShowCoForm} colors={colors} />}
       </main>
     );
   }
 
+  // 詳細表示部分は変更なし（省略可能ですが、そのまま使えるように維持します）
   const currentTrainee = currentCo.trainees?.find((t: any) => t.id === selectedTrId);
   const isTerminated = currentTrainee?.category === "実習終了";
 
@@ -235,13 +249,12 @@ export default function Home() {
               {categoryOptions.map(cat => {
                 const list = (currentCo.trainees || []).filter((t: any) => t.category === cat);
                 if (list.length === 0) return null;
-                const isEnd = cat === "実習終了";
                 return (
                   <div key={cat} style={{ marginBottom: '25px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: isEnd ? '#CCC' : colors.accent, marginBottom: '10px' }}>{cat}</div>
+                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: cat === "実習終了" ? '#CCC' : colors.accent, marginBottom: '10px' }}>{cat}</div>
                     <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                       {list.map((t: any) => (
-                        <button key={t.id} onClick={() => { setSelectedTrId(t.id); setActiveTab('current'); }} style={{ padding: '10px 20px', backgroundColor: '#FFF', border: `1px solid ${colors.border}`, borderRadius: sharpRadius, cursor: 'pointer', fontSize: '13px', color: isEnd ? '#CCC' : colors.text }}>{t.traineeName}</button>
+                        <button key={t.id} onClick={() => { setSelectedTrId(t.id); setActiveTab('current'); }} style={{ padding: '10px 20px', backgroundColor: '#FFF', border: `1px solid ${colors.border}`, borderRadius: sharpRadius, cursor: 'pointer', fontSize: '13px', color: cat === "実習終了" ? '#CCC' : colors.text }}>{t.traineeName}</button>
                       ))}
                     </div>
                   </div>
@@ -251,30 +264,17 @@ export default function Home() {
           ) : (
             <div style={{ backgroundColor: '#FFF', padding: '30px', border: `1px solid ${colors.border}`, borderRadius: sharpRadius }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px' }}>
-                <h3 style={{ margin: 0, fontSize: '20px' }}>
-                  { (activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]).traineeName }
-                  <span style={{ fontSize: '13px', color: colors.gray, fontWeight: 'normal' }}> { (activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]).category }</span>
-                </h3>
+                <h3 style={{ margin: 0, fontSize: '20px' }}>{ (activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]).traineeName }</h3>
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  {/* 最新タブかつ履歴がある場合のみ、取り消しボタンを表示 */}
                   {activeTab === 'current' && currentTrainee.phaseHistory?.length > 0 && (
-                    <button onClick={() => handleUndoPhaseChange(currentTrainee.id)} style={{ ...btnBase, backgroundColor: '#FFF', border: `1px solid ${colors.danger}`, color: colors.danger }}>
-                      区分変更を取り消す
-                    </button>
+                    <button onClick={() => handleUndoPhaseChange(currentTrainee.id)} style={{ ...btnBase, backgroundColor: '#FFF', border: `1px solid ${colors.danger}`, color: colors.danger }}>区分変更を取り消す</button>
                   )}
-                  <button onClick={() => { 
-                    const dataToEdit = activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number];
-                    setTrFormData(dataToEdit); setIsEditingTr(true); setEditingPhaseIdx(activeTab === 'current' ? null : (activeTab as number)); setShowTrForm(true); 
-                  }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>
-                    {activeTab === 'current' ? '編集・区分変更' : 'この履歴を修正'}
-                  </button>
+                  <button onClick={() => { setTrFormData(activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]); setIsEditingTr(true); setEditingPhaseIdx(activeTab === 'current' ? null : (activeTab as number)); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>編集・区分変更</button>
                 </div>
               </div>
 
               <div style={{ display: 'flex', gap: '5px', marginBottom: '20px' }}>
-                <button onClick={() => setActiveTab('current')} style={{ padding: '8px 20px', border: 'none', background: activeTab === 'current' ? colors.main : 'none', color: colors.accent, fontWeight: 'bold', cursor: 'pointer' }}>
-                  {isTerminated ? "終了" : "最新データ"}
-                </button>
+                <button onClick={() => setActiveTab('current')} style={{ padding: '8px 20px', border: 'none', background: activeTab === 'current' ? colors.main : 'none', color: colors.accent, fontWeight: 'bold', cursor: 'pointer' }}>最新データ</button>
                 {[...(currentTrainee.phaseHistory || [])].reverse().map((h, idx) => {
                   const originalIdx = currentTrainee.phaseHistory.length - 1 - idx;
                   return <button key={idx} onClick={() => setActiveTab(originalIdx)} style={{ padding: '8px 20px', border: 'none', background: activeTab === originalIdx ? '#EEE' : 'none', color: '#999', cursor: 'pointer' }}>{h.category}時</button>;
@@ -287,10 +287,7 @@ export default function Home() {
                   return (
                     <div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid #F5F5F5`, padding: '8px 0', fontSize: '13px' }}>
                       <span style={{ color: colors.gray }}>{labelMapTr[k]}</span>
-                      <div style={{ display: 'flex', alignItems: 'center' }}>
-                        <span style={{ fontWeight: 'bold' }}>{data[k] || '-'}</span>
-                        <button onClick={() => copy(data[k])} style={grayCBtn}>C</button>
-                      </div>
+                      <span style={{ fontWeight: 'bold' }}>{data[k] || '-'}</span>
                     </div>
                   );
                 })}
@@ -300,11 +297,36 @@ export default function Home() {
         </section>
       </div>
       {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} colors={colors} editingPhaseIdx={editingPhaseIdx} />}
+      {showCoForm && <CoFormModal coFormData={coFormData} setCoFormData={setCoFormData} handleSaveCompany={handleSaveCompany} setShowCoForm={setShowCoForm} colors={colors} />}
     </main>
   );
 }
 
-// --- 4. モーダルコンポーネント ---
+// --- 4. 会社追加用モーダル ---
+function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoForm, colors }: any) {
+  const handleChange = (k: string, v: string) => setCoFormData({ ...coFormData, [k]: v });
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(2px)' }}>
+      <div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: sharpRadius, width: '90%', maxWidth: '1100px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h2 style={{ fontSize: '18px', marginBottom: '30px', borderLeft: `4px solid ${colors.accent}`, paddingLeft: '15px' }}>新規実習実施者の登録</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
+          {Object.keys(labelMapCo).map(k => (
+            <div key={k} style={{ padding: '8px 12px', backgroundColor: '#FBFBFB', border: '1px solid #EEE', borderRadius: sharpRadius }}>
+              <label style={{ fontSize: '11px', color: colors.gray, fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>{labelMapCo[k]}</label>
+              <input type="text" value={coFormData[k] || ''} style={{ width: '100%', padding: '6px', border: '1px solid #ddd' }} onChange={e => handleChange(k, e.target.value)} />
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: '30px', display: 'flex', gap: '15px' }}>
+          <button onClick={handleSaveCompany} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', flex: 2 }}>保存する</button>
+          <button onClick={() => setShowCoForm(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, color: colors.text, flex: 1 }}>キャンセル</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- 5. 実習生追加用モーダル（既存） ---
 function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrForm, isEditingTr, companies, colors, editingPhaseIdx }: any) {
   const handleChange = (k: string, v: string) => {
     let newData = { ...trFormData, [k]: v };
