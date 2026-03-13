@@ -27,7 +27,7 @@ const labelMapTr: { [key: string]: string } = {
 };
 
 const statusOptions = ["認定申請準備中", "認定申請中", "在留資格準備中", "在留資格申請中", "入国待ち", "入国後講習中", "実習中", "更新準備中", "更新手続き中", "終了", "帰国中", "終了予定", "待機中", "失踪", "その他"];
-const categoryOptions = ["技能実習1号", "技能実習2号(1)", "技能実習2号(2)", "特定技能"];
+const categoryOptions = ["技能実習1号", "技能実習2号(1)", "技能実習2号(2)", "特定技能", "実習終了"];
 const nationalityOptions = ["ベトナム", "中国", "インドネシア", "フィリピン", "ミャンマー", "カンボジア", "タイ", "その他（手入力）"];
 
 const initialTraineeForm = {
@@ -43,7 +43,8 @@ const initialTraineeForm = {
 // --- 2. 便利関数 ---
 const calculateAge = (birthday: string) => {
   if (!birthday) return "";
-  const birthDate = new Date(birthday.replace(/\//g, '-'));
+  const cleanDate = birthday.replace(/\//g, '-');
+  const birthDate = new Date(cleanDate);
   if (isNaN(birthDate.getTime())) return "";
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
@@ -54,30 +55,26 @@ const calculateAge = (birthday: string) => {
 const calculateDates = (entryDateStr: string) => {
   const date = new Date(entryDateStr.replace(/\//g, '-'));
   if (isNaN(date.getTime())) return { end: "", renew: "" };
-  
-  // 終了日: 1年後の1日前
   const endDate = new Date(date);
   endDate.setFullYear(endDate.getFullYear() + 1);
   endDate.setDate(endDate.getDate() - 1);
-  
-  // 更新開始日: 終了日の3ヶ月前
   const renewDate = new Date(endDate);
   renewDate.setMonth(renewDate.getMonth() - 3);
-  
   const fmt = (d: Date) => d.toISOString().split('T')[0].replace(/-/g, '/');
   return { end: fmt(endDate), renew: fmt(renewDate) };
 };
 
 // --- 3. スタイル設定 ---
-const colors = { main: '#f39c12', sub: '#e67e22', bg: '#fffaf0', light: '#fef5e7', border: '#fbeee0' };
-const btnStyle = { padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold' as 'bold', transition: '0.2s' };
+const colors = { main: '#ffe0b2', sub: '#f57c00', bg: '#fdfdfd', light: '#fff8f0', border: '#ffcc80', accentRed: '#d32f2f' };
+const sharpRadius = '6px';
+const btnStyle = { padding: '10px 20px', borderRadius: sharpRadius, border: 'none', cursor: 'pointer', fontWeight: 'bold' as 'bold', transition: '0.2s' };
+const cBtn = { width: '22px', height: '22px', fontSize: '10px', cursor: 'pointer', backgroundColor: '#fff', border: '1px solid #ffcc80', borderRadius: '4px', color: '#f57c00', marginLeft: '8px' };
 
 // --- 4. メイン ---
 export default function Home() {
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [showCoForm, setShowCoForm] = useState(false);
   const [showTrForm, setShowTrForm] = useState(false);
-  const [isEditingCo, setIsEditingCo] = useState(false);
   const [isEditingTr, setIsEditingTr] = useState(false);
   const [currentCo, setCurrentCo] = useState<any>(null);
   const [selectedTrId, setSelectedTrId] = useState<number | null>(null);
@@ -85,7 +82,6 @@ export default function Home() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [coFormData, setCoFormData] = useState<any>({});
   const [trFormData, setTrFormData] = useState<any>(initialTraineeForm);
-  const [memoData, setMemoData] = useState({ date: new Date().toLocaleDateString('ja-JP'), text: "", author: "政所", id: null as number | null });
 
   const fetchCompanies = async () => {
     const q = query(collection(db, "companies"), orderBy("createdAt", "desc"));
@@ -97,14 +93,15 @@ export default function Home() {
 
   useEffect(() => { fetchCompanies(); }, []);
 
-  // 要対応リストの取得
+  const copy = (text: string) => { if (text) navigator.clipboard.writeText(text); };
+
   const alerts = companies.flatMap(c => (c.trainees || []).map((t: any) => ({ ...t, companyName: c.companyName, companyId: c.id })))
     .filter(t => {
-      if (!t.renewStartDate) return false;
+      if (t.category === "実習終了" || !t.renewStartDate) return false;
       const today = new Date();
       const target = new Date(t.renewStartDate.replace(/\//g, '-'));
       const diff = (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
-      return diff <= 30; // 30日以内
+      return diff <= 30;
     });
 
   const handleSaveTrainee = async () => {
@@ -127,38 +124,42 @@ export default function Home() {
 
   if (view === 'list') {
     return (
-      <main style={{ padding: '30px', backgroundColor: '#fcfcfc', minHeight: '100vh', fontFamily: '"Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", sans-serif' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px', background: 'linear-gradient(135deg, #f39c12, #e67e22)', padding: '20px', borderRadius: '15px', color: '#fff', boxShadow: '0 4px 15px rgba(230, 126, 34, 0.3)' }}>
-          <h1 style={{ margin: 0, fontSize: '24px' }}>Technical Intern Trainee System</h1>
+      <main style={{ padding: '30px', backgroundColor: '#f9f9f9', minHeight: '100vh', fontFamily: 'sans-serif' }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px', background: colors.main, padding: '20px', borderRadius: sharpRadius, color: '#5d4037' }}>
+          <h1 style={{ margin: 0, fontSize: '20px' }}>アシストねっと協同組合　技能実習生管理システム</h1>
           <div style={{ display: 'flex', gap: '15px' }}>
             <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnStyle, backgroundColor: '#fff', color: colors.sub }}>＋ 新規実習生</button>
-            <button onClick={() => { setCoFormData({}); setIsEditingCo(false); setShowCoForm(true); }} style={{ ...btnStyle, backgroundColor: 'rgba(255,255,255,0.2)', color: '#fff', border: '1px solid #fff' }}>＋ 新規実施者</button>
+            <button onClick={() => { setCoFormData({}); setShowCoForm(true); }} style={{ ...btnStyle, backgroundColor: 'rgba(255,255,255,0.4)', color: '#5d4037' }}>＋ 新規実施者</button>
           </div>
         </header>
 
-        {/* 要対応セクション */}
         {alerts.length > 0 && (
-          <section style={{ marginBottom: '30px', padding: '20px', backgroundColor: '#fff', borderRadius: '12px', border: '2px solid #e74c3c' }}>
-            <h2 style={{ fontSize: '16px', color: '#e74c3c', marginTop: 0 }}>⚠️ 更新手続き期限が近い実習生（30日以内）</h2>
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <section style={{ marginBottom: '30px', padding: '20px', backgroundColor: '#fff', borderRadius: sharpRadius, border: `1px solid ${colors.accentRed}` }}>
+            <h2 style={{ fontSize: '15px', color: colors.accentRed, marginTop: 0 }}>⚠️ 確認必須リスト</h2>
+            <div style={{ display: 'grid', gap: '10px', marginTop: '10px' }}>
               {alerts.map(t => (
-                <button key={t.id} onClick={() => { setCurrentCo(companies.find(c => c.id === t.companyId)); setView('detail'); setSelectedTrId(t.id); }} style={{ padding: '8px 15px', backgroundColor: '#fdf2f2', border: '1px solid #f5c6cb', color: '#721c24', borderRadius: '5px', cursor: 'pointer', fontSize: '13px' }}>
-                  {t.traineeName} ({t.companyName}) - {t.renewStartDate}
-                </button>
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '15px', fontSize: '13px' }}>
+                  <button onClick={() => { setCurrentCo(companies.find(c => c.id === t.companyId)); setView('detail'); setSelectedTrId(t.id); }} style={{ padding: '5px 12px', background: colors.accentRed, color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                    {t.traineeName} ({t.companyName})
+                  </button>
+                  <span style={{ color: colors.accentRed }}>理由：更新手続き期限が近い実習生（30日以内）</span>
+                </div>
               ))}
             </div>
           </section>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-          {companies.map(c => (
-            <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); }} style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', cursor: 'pointer', border: '1px solid #eee', transition: '0.3s', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
-              <div style={{ fontWeight: 'bold', color: colors.sub, fontSize: '18px', marginBottom: '10px' }}>{c.companyName}</div>
-              <div style={{ fontSize: '13px', color: '#666' }}>受入人数: <span style={{ color: '#333', fontWeight: 'bold' }}>{c.trainees?.length || 0} 名</span></div>
-            </div>
-          ))}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+          {companies.map(c => {
+            const activeCount = (c.trainees || []).filter((t: any) => t.category !== "実習終了").length;
+            return (
+              <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); }} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: sharpRadius, cursor: 'pointer', border: '1px solid #eee' }}>
+                <div style={{ fontWeight: 'bold', color: '#000', fontSize: '16px', marginBottom: '10px' }}>{c.companyName}</div>
+                <div style={{ fontSize: '13px', color: '#666' }}>現在受入人数：<span style={{ color: colors.sub, fontWeight: 'bold' }}>{activeCount} 名</span></div>
+              </div>
+            );
+          })}
         </div>
-        {showCoForm && <CoFormModal coFormData={coFormData} setCoFormData={setCoFormData} handleSaveCompany={async () => { /* ...既存保存ロジック... */ }} setShowCoForm={setShowCoForm} colors={colors} />}
         {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} colors={colors} />}
       </main>
     );
@@ -168,52 +169,72 @@ export default function Home() {
 
   return (
     <main style={{ padding: '20px', backgroundColor: colors.bg, minHeight: '100vh' }}>
-      <button onClick={() => { setView('list'); setSelectedTrId(null); setActiveTab('current'); }} style={{ border: 'none', background: 'none', color: colors.sub, fontWeight: 'bold', cursor: 'pointer', marginBottom: '15px' }}>← 会社一覧に戻る</button>
+      <button onClick={() => { setView('list'); setSelectedTrId(null); setActiveTab('current'); }} style={{ border: 'none', background: 'none', color: '#666', fontWeight: 'bold', cursor: 'pointer', marginBottom: '15px' }}>← 会社一覧に戻る</button>
       
-      <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '25px' }}>
-        <aside style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '15px', boxShadow: '0 4px 10px rgba(0,0,0,0.05)' }}>
-          <h2 style={{ color: colors.sub, borderBottom: `2px solid ${colors.main}`, paddingBottom: '10px' }}>{currentCo.companyName}</h2>
+      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '20px' }}>
+        <aside style={{ backgroundColor: '#fff', padding: '20px', borderRadius: sharpRadius, border: '1px solid #eee' }}>
+          <h2 style={{ color: '#000', fontSize: '18px', borderBottom: `2px solid ${colors.main}`, paddingBottom: '10px' }}>{currentCo.companyName}</h2>
           {Object.keys(labelMapCo).map(k => (
-            <div key={k} style={{ marginBottom: '8px', fontSize: '12px' }}>
+            <div key={k} style={{ marginBottom: '8px', fontSize: '11px' }}>
               <span style={{ color: '#999', display: 'block' }}>{labelMapCo[k]}</span>
-              <span style={{ fontWeight: 'bold' }}>{currentCo[k] || '-'}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 'bold', color: '#333' }}>{currentCo[k] || '-'}</span>
+                <button onClick={() => copy(currentCo[k])} style={cBtn}>C</button>
+              </div>
             </div>
           ))}
         </aside>
 
-        <section style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '15px', boxShadow: '0 4px 10px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ margin: '0 0 20px 0' }}>実習生詳細</h3>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '25px', borderBottom: '1px solid #eee', paddingBottom: '15px', flexWrap: 'wrap' }}>
-            {(currentCo.trainees || []).map((t: any) => (
-              <button key={t.id} onClick={() => { setSelectedTrId(t.id); setActiveTab('current'); }} style={{ padding: '8px 20px', borderRadius: '25px', border: selectedTrId === t.id ? `2px solid ${colors.main}` : '1px solid #ddd', backgroundColor: selectedTrId === t.id ? colors.light : '#fff', color: selectedTrId === t.id ? colors.sub : '#666', cursor: 'pointer', fontWeight: 'bold' }}>{t.traineeName}</button>
-            ))}
-          </div>
+        <section style={{ backgroundColor: '#fff', padding: '25px', borderRadius: sharpRadius, border: '1px solid #eee' }}>
+          <h3 style={{ margin: '0 0 20px 0', fontSize: '16px' }}>所属実習生一覧</h3>
+          
+          {categoryOptions.map(cat => {
+            const list = (currentCo.trainees || []).filter((t: any) => t.category === cat);
+            if (list.length === 0) return null;
+            const isFinished = cat === "実習終了";
+            return (
+              <div key={cat} style={{ marginBottom: '20px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 'bold', color: isFinished ? '#bbb' : colors.sub, marginBottom: '8px', borderLeft: `3px solid ${isFinished ? '#ddd' : colors.main}`, paddingLeft: '8px' }}>{cat}</div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {list.map((t: any) => (
+                    <button key={t.id} onClick={() => { setSelectedTrId(t.id); setActiveTab('current'); }} style={{ padding: '6px 15px', borderRadius: sharpRadius, border: selectedTrId === t.id ? `2px solid ${colors.sub}` : '1px solid #ddd', backgroundColor: selectedTrId === t.id ? colors.light : '#fff', color: isFinished ? '#aaa' : (selectedTrId === t.id ? colors.sub : '#666'), cursor: 'pointer', fontSize: '13px' }}>{t.traineeName}</button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
 
           {currentTrainee && (
-            <div>
-              <div style={{ display: 'flex', gap: '5px', marginBottom: '20px' }}>
-                {/* 履歴を逆順に表示（最新が一番左） */}
-                <button onClick={() => setActiveTab('current')} style={{ padding: '8px 20px', border: 'none', borderRadius: '5px 5px 0 0', background: activeTab === 'current' ? colors.main : '#eee', color: activeTab === 'current' ? '#fff' : '#666', cursor: 'pointer' }}>最新データ</button>
+            <div style={{ marginTop: '30px', borderTop: '1px solid #eee', paddingTop: '20px' }}>
+              <div style={{ display: 'flex', gap: '5px', marginBottom: '-1px' }}>
+                <button onClick={() => setActiveTab('current')} style={{ padding: '8px 20px', border: '1px solid #eee', borderBottom: activeTab === 'current' ? 'none' : '1px solid #eee', borderRadius: `${sharpRadius} ${sharpRadius} 0 0`, background: activeTab === 'current' ? colors.light : '#f9f9f9', color: colors.sub, fontWeight: 'bold', cursor: 'pointer', zIndex: 1 }}>最新</button>
                 {([...(currentTrainee.phaseHistory || [])].reverse()).map((h: any, idx: number) => {
                    const originalIdx = currentTrainee.phaseHistory.length - 1 - idx;
                    return (
-                     <button key={idx} onClick={() => setActiveTab(originalIdx)} style={{ padding: '8px 20px', border: 'none', borderRadius: '5px 5px 0 0', background: activeTab === originalIdx ? '#555' : '#ddd', color: '#fff', cursor: 'pointer' }}>{h.category}時</button>
+                     <button key={idx} onClick={() => setActiveTab(originalIdx)} style={{ padding: '8px 20px', border: '1px solid #eee', borderBottom: activeTab === originalIdx ? 'none' : '1px solid #eee', borderRadius: `${sharpRadius} ${sharpRadius} 0 0`, background: activeTab === originalIdx ? '#eee' : '#f9f9f9', color: '#999', cursor: 'pointer' }}>{h.category}時</button>
                    );
                 })}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 40px', backgroundColor: colors.light, padding: '20px', borderRadius: '0 10px 10px 10px' }}>
-                {Object.keys(labelMapTr).map(k => (
-                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid ${colors.border}`, padding: '8px 0', fontSize: '14px' }}>
-                    <span style={{ color: '#888' }}>{labelMapTr[k]}</span>
-                    <span style={{ fontWeight: 'bold' }}>{ (activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab])[k] || '-' }</span>
-                  </div>
-                ))}
-                {activeTab === 'current' && <button onClick={() => { setTrFormData(currentTrainee); setIsEditingTr(true); setShowTrForm(true); }} style={{ gridColumn: 'span 2', marginTop: '20px', ...btnStyle, backgroundColor: colors.sub, color: '#fff' }}>この情報を編集する</button>}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 30px', backgroundColor: colors.light, padding: '20px', borderRadius: `0 ${sharpRadius} ${sharpRadius} ${sharpRadius}`, border: '1px solid #eee' }}>
+                {Object.keys(labelMapTr).map(k => {
+                  const data = activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab];
+                  return (
+                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${colors.border}`, padding: '6px 0', fontSize: '13px' }}>
+                      <span style={{ color: '#888' }}>{labelMapTr[k]}</span>
+                      <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold', color: currentTrainee.category === "実習終了" ? "#888" : "#333" }}>{ data[k] || '-' }</span>
+                        <button onClick={() => copy(data[k])} style={cBtn}>C</button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {activeTab === 'current' && <button onClick={() => { setTrFormData(currentTrainee); setIsEditingTr(true); setShowTrForm(true); }} style={{ gridColumn: 'span 2', marginTop: '15px', ...btnStyle, backgroundColor: colors.sub, color: '#fff' }}>編集・区分変更</button>}
               </div>
             </div>
           )}
         </section>
       </div>
+      {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} isEditingTr={isEditingTr} companies={companies} colors={colors} />}
     </main>
   );
 }
@@ -229,7 +250,7 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
       newData.renewStartDate = renew;
     }
     if (k === 'category' && isEditingTr) {
-      if (confirm("区分を変更します。現在のデータは履歴に保存され、情報を上書き編集できます。")) {
+      if (confirm("区分を変更します。現在のデータは履歴に保存され、情報を最新状態で編集できるようになります。")) {
         const archiveEntry = { ...trFormData };
         delete archiveEntry.phaseHistory;
         newData.phaseHistory = [...(trFormData.phaseHistory || []), archiveEntry];
@@ -239,53 +260,37 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
   };
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-      <div style={{ backgroundColor: '#fff', padding: '35px', borderRadius: '20px', width: '90%', maxWidth: '1100px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
-        <h2 style={{ color: colors.sub, marginBottom: '25px', borderLeft: `6px solid ${colors.main}`, paddingLeft: '15px' }}>実習生データ入力</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: sharpRadius, width: '90%', maxWidth: '1100px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h2 style={{ color: colors.sub, fontSize: '18px', marginBottom: '20px' }}>実習生データ登録/編集</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
           {Object.keys(labelMapTr).map(k => (
-            <div key={k} style={{ padding: '10px', backgroundColor: colors.light, borderRadius: '8px' }}>
-              <label style={{ fontSize: '11px', color: colors.sub, fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>{labelMapTr[k]}</label>
-              {/* 国籍、ステータスなどのセレクトボックス処理（中略、前回のロジックを維持） */}
+            <div key={k} style={{ padding: '10px', backgroundColor: colors.light, borderRadius: sharpRadius }}>
+              <label style={{ fontSize: '11px', color: colors.sub, fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>{labelMapTr[k]}</label>
               { k === 'nationality' ? (
-                 <select style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }} value={nationalityOptions.includes(trFormData[k]) ? trFormData[k] : "その他（手入力）"} onChange={e => handleChange(k, e.target.value)}>
-                   {nationalityOptions.map(o => <option key={o} value={o}>{o}</option>)}
-                 </select>
+                <select style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} value={nationalityOptions.includes(trFormData[k]) ? trFormData[k] : "その他（手入力）"} onChange={e => handleChange(k, e.target.value)}>
+                  {nationalityOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : k === 'category' ? (
+                <select style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                  {categoryOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
               ) : (
                 <input 
                   type="text" 
                   placeholder={ (k==='endDate' || k==='renewStartDate') ? '（入力不要）' : '2026/03/13' }
                   value={trFormData[k] || ''} 
-                  style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', backgroundColor: '#fff' }} 
+                  style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }} 
                   onChange={e => handleChange(k, e.target.value)} 
                 />
               )}
             </div>
           ))}
         </div>
-        <div style={{ marginTop: '30px', display: 'flex', gap: '15px' }}>
-          <button onClick={handleSaveTrainee} style={{ ...btnStyle, backgroundColor: colors.main, color: '#fff', flex: 2, fontSize: '16px' }}>データを保存する</button>
+        <div style={{ marginTop: '25px', display: 'flex', gap: '15px' }}>
+          <button onClick={handleSaveTrainee} style={{ ...btnStyle, backgroundColor: colors.sub, color: '#fff', flex: 2 }}>保存する</button>
           <button onClick={() => setShowTrForm(false)} style={{ ...btnStyle, backgroundColor: '#eee', color: '#666', flex: 1 }}>キャンセル</button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoForm, colors }: any) {
-  return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-      <div style={{ backgroundColor: '#fff', padding: '35px', borderRadius: '20px', width: '95%', maxWidth: '1000px', maxHeight: '90vh', overflowY: 'auto' }}>
-        <h2 style={{ color: colors.sub }}>企業データ登録</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
-          {Object.keys(labelMapCo).map(k => (
-            <div key={k} style={{ padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '8px' }}>
-              <label style={{ fontSize: '11px', color: '#999' }}>{labelMapCo[k]}</label>
-              <input type="text" value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} onChange={e => setCoFormData({...coFormData, [k]: e.target.value})} />
-            </div>
-          ))}
-        </div>
-        <button onClick={() => setShowCoForm(false)} style={{ marginTop: '20px', ...btnStyle, backgroundColor: colors.main, color: '#fff' }}>閉じる（保存は未実装）</button>
       </div>
     </div>
   );
