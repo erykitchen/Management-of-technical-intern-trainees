@@ -17,7 +17,7 @@ const labelMapCo: { [key: string]: string } = {
 };
 
 const labelMapTr: { [key: string]: string } = {
-  status: "ステータス", traineeName: "実習生氏名", kana: "フリガナ", 
+  batch: "バッチ(期生)", status: "ステータス", traineeName: "実習生氏名", kana: "フリガナ", 
   traineeZip: "郵便番号", traineeAddress: "住所", 
   category: "区分", nationality: "国籍", birthday: "生年月日", age: "年齢", gender: "性別",
   period: "期間", stayLimit: "在留期限", cardNumber: "在留カード番号", passportLimit: "パスポート期限",
@@ -28,11 +28,16 @@ const labelMapTr: { [key: string]: string } = {
 };
 
 const categoryOptions = ["技能実習1号", "技能実習2号(1)", "技能実習2号(2)", "特定技能", "実習終了"];
+const batchOptions = ["なし", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
 const nationalityOptions = ["ベトナム", "中国", "インドネシア", "フィリピン", "ミャンマー", "カンボジア", "タイ", "その他（手入力）"];
 const statusOptions = ["選択する", "認定申請準備中", "認定手続中", "ビザ申請中", "入国待機", "実習中", "一時帰国中", "その他"];
 const acceptanceOptions = ["選択する", "受入中", "無し"];
 const genderOptions = ["男", "女"];
 const keysToClearOnNewPhase = ["status", "stayLimit", "cardNumber", "certificateNumber", "applyDate", "certDate", "entryDate", "endDate", "renewStartDate"];
+
+const batchColorMap: { [key: string]: string } = {
+  "①": "#E3F2FD", "②": "#FFFDE7", "③": "#FFEBEE", "④": "#F3E5F5", "⑤": "#E8F5E9", "なし": "#FFFFFF"
+};
 
 const initialCompanyForm = {
   ...Object.keys(labelMapCo).reduce((acc: any, key) => { acc[key] = ""; return acc; }, {}),
@@ -40,7 +45,7 @@ const initialCompanyForm = {
 };
 
 const initialTraineeForm = {
-  targetCompanyId: "", status: "選択する", traineeName: "", kana: "", 
+  targetCompanyId: "", batch: "なし", status: "選択する", traineeName: "", kana: "", 
   traineeZip: "", traineeAddress: "", category: "技能実習1号", nationality: "ベトナム",
   birthday: "", age: "", gender: "男", period: "1年", stayLimit: "", 
   cardNumber: "", passportLimit: "", passportNumber: "", certificateNumber: "",
@@ -117,6 +122,8 @@ export default function Home() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [trFormData, setTrFormData] = useState<any>(initialTraineeForm);
   const [coFormData, setCoFormData] = useState<any>(initialCompanyForm);
+  // ★バッチ絞り込み用の状態
+  const [filterBatch, setFilterBatch] = useState<string>('すべて');
 
   const colors = { main: '#FFF9F0', accent: '#F57C00', text: '#2C3E50', gray: '#95A5A6', lightGray: '#F2F2F2', border: '#E0E0E0', white: '#FFFFFF', danger: '#E74C3C' };
   const sharpRadius = '4px';
@@ -215,7 +222,6 @@ export default function Home() {
     } catch (e) { alert("取り消し失敗"); }
   };
 
-  // 全体の受入人数を計算
   const totalActiveTrainees = companies.reduce((sum, c) => 
     sum + (c.trainees || []).filter((t: any) => t.category !== "実習終了").length, 0
   );
@@ -243,7 +249,7 @@ export default function Home() {
             const activeCount = trs.filter((t: any) => t.category !== "実習終了").length;
             const hasAlert = trs.some((t: any) => checkAlert(t.stayLimit, t.category) || checkAlert(t.passportLimit, t.category));
             return (
-              <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); }} style={{ backgroundColor: '#fff', padding: '24px', borderRadius: sharpRadius, border: hasAlert ? `2px solid ${colors.danger}` : `1px solid ${colors.border}`, cursor: 'pointer', position: 'relative', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+              <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); setFilterBatch('すべて'); }} style={{ backgroundColor: '#fff', padding: '24px', borderRadius: sharpRadius, border: hasAlert ? `2px solid ${colors.danger}` : `1px solid ${colors.border}`, cursor: 'pointer', position: 'relative', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                 <div style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: '10px' }}>{c.companyName}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '13px', color: colors.gray }}>受入人数</span>
@@ -275,8 +281,8 @@ export default function Home() {
           {!selectedTrId && (
             <button onClick={() => { setTrFormData({...initialTraineeForm, targetCompanyId: currentCo.id}); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 実習生追加</button>
           )}
-          <button onClick={handleDeleteCompany} style={{ ...btnBase, backgroundColor: '#FFF', border: `1px solid ${colors.danger}`, color: colors.danger }}>会社削除</button>
           <button onClick={() => { setIsEditingCo(true); setCoFormData(currentCo); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>会社編集</button>
+          <button onClick={handleDeleteCompany} style={{ ...btnBase, backgroundColor: '#FFF', border: `1px solid ${colors.danger}`, color: colors.danger }}>会社削除</button>
         </div>
       </nav>
 
@@ -298,10 +304,32 @@ export default function Home() {
           {!selectedTrId ? (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '14px', color: colors.gray }}>実習生一覧</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <h3 style={{ fontSize: '14px', color: colors.gray }}>実習生一覧</h3>
+                  {/* ★バッチ絞り込みタブ */}
+                  <div style={{ display: 'flex', gap: '4px', backgroundColor: colors.lightGray, padding: '3px', borderRadius: '6px' }}>
+                    {['すべて', ...batchOptions].map(b => (
+                      <button key={b} onClick={() => setFilterBatch(b)} style={{ 
+                        padding: '4px 10px', fontSize: '11px', border: 'none', borderRadius: '4px', cursor: 'pointer',
+                        backgroundColor: filterBatch === b ? colors.white : 'transparent',
+                        color: filterBatch === b ? colors.accent : colors.gray,
+                        fontWeight: filterBatch === b ? 'bold' : 'normal',
+                        boxShadow: filterBatch === b ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                      }}>
+                        {b}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
               {categoryOptions.map(cat => {
-                const list = (currentCo.trainees || []).filter((t: any) => t.category === cat);
+                // ★絞り込みロジックの適用
+                const list = (currentCo.trainees || []).filter((t: any) => {
+                  const matchCat = t.category === cat;
+                  const matchBatch = filterBatch === 'すべて' || t.batch === filterBatch;
+                  return matchCat && matchBatch;
+                });
+                
                 if (list.length === 0) return null;
                 return (
                   <div key={cat} style={{ marginBottom: '25px' }}>
@@ -309,8 +337,10 @@ export default function Home() {
                     <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                       {list.map((t: any) => {
                         const isAlert = checkAlert(t.stayLimit, t.category) || checkAlert(t.passportLimit, t.category);
+                        const bgColor = batchColorMap[t.batch] || "#FFFFFF";
                         return (
-                          <button key={t.id} onClick={() => { setSelectedTrId(t.id); setActiveTab('current'); }} style={{ padding: '12px 24px', backgroundColor: '#FFF', border: isAlert ? `2px solid ${colors.danger}` : `1px solid ${colors.border}`, borderRadius: sharpRadius, cursor: 'pointer', fontWeight: 'bold', color: cat === "実習終了" ? '#999' : colors.text }}>
+                          <button key={t.id} onClick={() => { setSelectedTrId(t.id); setActiveTab('current'); }} style={{ padding: '12px 24px', backgroundColor: bgColor, border: isAlert ? `2px solid ${colors.danger}` : `1px solid ${colors.border}`, borderRadius: sharpRadius, cursor: 'pointer', fontWeight: 'bold', color: cat === "実習終了" ? '#999' : colors.text, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {t.batch && t.batch !== "なし" && <span style={{ fontSize: '10px', backgroundColor: 'rgba(0,0,0,0.05)', padding: '2px 4px', borderRadius: '2px' }}>{t.batch}</span>}
                             {t.traineeName} {isAlert && "⚠️"}
                           </button>
                         );
@@ -319,6 +349,12 @@ export default function Home() {
                   </div>
                 );
               })}
+              {/* 絞り込んだ結果、誰もいない場合の表示 */}
+              {filterBatch !== 'すべて' && !(currentCo.trainees || []).some((t:any) => t.batch === filterBatch) && (
+                <div style={{ padding: '40px', textAlign: 'center', color: colors.gray, fontSize: '13px', backgroundColor: colors.white, borderRadius: sharpRadius }}>
+                  バッチ「{filterBatch}」に所属する実習生はいません
+                </div>
+              )}
             </div>
           ) : (
             <div style={{ backgroundColor: '#FFF', padding: '35px', border: `1px solid ${colors.border}`, borderRadius: sharpRadius, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
@@ -368,7 +404,7 @@ export default function Home() {
   );
 }
 
-// --- 4. 会社追加・編集用モーダル ---
+// --- 4. 会社追加・編集用モーダル (内容は維持) ---
 function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoForm, colors, btnBase, isEditing }: any) {
   const handleChange = (k: string, v: string) => setCoFormData({ ...coFormData, [k]: v });
   return (
@@ -400,7 +436,7 @@ function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoFo
   );
 }
 
-// --- 5. 実習生用モーダル ---
+// --- 5. 実習生用モーダル (内容は維持) ---
 function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrForm, colors, btnBase, isEditingTr, companies, editingPhaseIdx, currentCoId }: any) {
   const handleChange = (k: string, v: string) => {
     let newData = { ...trFormData, [k]: v };
@@ -444,6 +480,10 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
               ) : k === 'category' ? (
                 <select style={{ width: '100%', padding: '8px', borderRadius: '4px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)} disabled={editingPhaseIdx !== null}>
                   {categoryOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : k === 'batch' ? (
+                <select style={{ width: '100%', padding: '8px', borderRadius: '4px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                  {batchOptions.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : k === 'nationality' ? (
                 <select style={{ width: '100%', padding: '8px', borderRadius: '4px' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
