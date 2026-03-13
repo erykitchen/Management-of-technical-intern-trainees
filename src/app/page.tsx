@@ -1,14 +1,9 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { db } from './firebase';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "firebase/auth";
-import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 
-// --- 0. セキュリティ設定 ---
-// ここにログインを許可するメールアドレスを入れてください
-const ALLOWED_EMAILS = ["mandokoro.anc@gmail.com", "assistnet.coop@gmail.com"];
-
-// --- 1. ラベル・選択肢・初期値定義 ---
+// --- 1. ラベル・定義 ---
 const labelMapCo: { [key: string]: string } = {
   companyName: "会社名", settlement: "決算時期", representative: "代表者氏名", jobType: "職種（小分類）",
   zipCode: "郵便番号", address: "住所", tel: "TEL", joinedDate: "組合加入年月日",
@@ -83,8 +78,6 @@ const calculateAge = (birthday: string) => {
 
 // --- 3. メインコンポーネント ---
 export default function Home() {
-  const [user, setUser] = useState<any>(null);
-  const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
   const [showCoForm, setShowCoForm] = useState(false);
@@ -100,31 +93,9 @@ export default function Home() {
   const sharpRadius = '4px';
   const btnBase = { padding: '10px 18px', borderRadius: sharpRadius, border: 'none', cursor: 'pointer', fontWeight: '600' as const, fontSize: '13px' };
 
-  const auth = getAuth();
-
   useEffect(() => {
-    setPersistence(auth, browserLocalPersistence);
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      if (u && ALLOWED_EMAILS.includes(u.email || "")) {
-        setUser(u);
-        fetchCompanies();
-      } else if (u) {
-        alert("アクセス権限がありません");
-        signOut(auth);
-      } else {
-        setUser(null);
-      }
-      setAuthLoading(false);
-    });
-    return () => unsubscribe();
+    fetchCompanies();
   }, []);
-
-  const handleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    try { await signInWithPopup(auth, provider); } catch (e) { alert("ログイン失敗。Firebaseの設定を確認してください。"); }
-  };
-
-  const handleLogout = () => signOut(auth);
 
   const fetchCompanies = async () => {
     const q = query(collection(db, "companies"), orderBy("createdAt", "desc"));
@@ -168,24 +139,12 @@ export default function Home() {
     } catch (e) { alert("保存エラー"); }
   };
 
-  if (authLoading) return <div style={{ padding: '40px', textAlign: 'center' }}>読み込み中...</div>;
-
-  if (!user) {
-    return (
-      <main style={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', backgroundColor: colors.main }}>
-        <h1 style={{ marginBottom: '20px', fontSize: '24px', fontWeight: '800' }}>アシストねっと管理システム</h1>
-        <button onClick={handleLogin} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', fontSize: '16px', padding: '15px 30px' }}>Googleでログイン</button>
-      </main>
-    );
-  }
-
   if (view === 'list') {
     return (
       <main style={{ padding: '40px', minHeight: '100vh', backgroundColor: '#F9F9F9' }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px' }}>
           <div>
             <h1 style={{ fontSize: '24px', fontWeight: '800' }}>アシストねっと協同組合</h1>
-            <button onClick={handleLogout} style={{ fontSize: '12px', background: 'none', border: 'none', color: colors.gray, cursor: 'pointer', textDecoration: 'underline' }}>ログアウト</button>
           </div>
           <div style={{ display: 'flex', gap: '10px' }}>
             <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習生</button>
