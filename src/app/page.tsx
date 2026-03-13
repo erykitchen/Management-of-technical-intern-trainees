@@ -124,7 +124,7 @@ export default function Home() {
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習生</button>
-            <button style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}`, color: colors.text }}>＋ 新規実施者</button>
+            <button style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習実施者</button>
           </div>
         </header>
 
@@ -167,8 +167,7 @@ export default function Home() {
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1px', backgroundColor: colors.border, flex: 1 }}>
         <aside style={{ backgroundColor: '#FFF', padding: '30px' }}>
           <div onClick={() => { setSelectedTrId(null); setActiveTab('current'); }} style={{ cursor: 'pointer', marginBottom: '30px' }}>
-            <h2 style={{ fontSize: '18px', margin: 0, borderBottom: `3px solid ${colors.main}`, paddingBottom: '10px', color: '#000' }}>{currentCo.companyName}</h2>
-            <p style={{ fontSize: '10px', color: colors.accent, marginTop: '5px' }}>● 会社情報トップ（クリックで切替解除）</p>
+            <h2 style={{ fontSize: '18px', margin: 0, borderBottom: `3px solid ${colors.main}`, paddingBottom: '10px', color: '#000', transition: 'color 0.2s' }} onMouseOver={(e) => e.currentTarget.style.color = colors.accent} onMouseOut={(e) => e.currentTarget.style.color = '#000'}>{currentCo.companyName}</h2>
           </div>
           {Object.keys(labelMapCo).map(k => (
             <div key={k} style={{ marginBottom: '12px', fontSize: '11px' }}>
@@ -250,7 +249,7 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
       newData.renewStartDate = renew;
     }
     if (k === 'category' && isEditingTr) {
-      if (confirm("区分を変更します。現在のデータは履歴に保存され、情報を最新状態で編集できるようになります。")) {
+      if (confirm("区分を変更します。現在のデータは履歴に保存されます。")) {
         const archiveEntry = { ...trFormData };
         delete archiveEntry.phaseHistory;
         newData.phaseHistory = [...(trFormData.phaseHistory || []), archiveEntry];
@@ -263,7 +262,6 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(2px)' }}>
       <div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: sharpRadius, width: '90%', maxWidth: '1000px', maxHeight: '90vh', overflowY: 'auto' }}>
         <h2 style={{ fontSize: '18px', marginBottom: '30px', borderLeft: `4px solid ${colors.accent}`, paddingLeft: '15px' }}>実習生情報の登録・編集</h2>
-        
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
           {!isEditingTr && (
             <div style={{ gridColumn: 'span 3', padding: '10px', backgroundColor: '#F0F7FF', borderRadius: sharpRadius, marginBottom: '10px' }}>
@@ -274,7 +272,6 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
               </select>
             </div>
           )}
-
           {Object.keys(labelMapTr).map(k => (
             <div key={k} style={{ padding: '10px', backgroundColor: '#FBFBFB', border: '1px solid #EEE', borderRadius: sharpRadius }}>
               <label style={{ fontSize: '11px', color: colors.gray, fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>{labelMapTr[k]}</label>
@@ -287,17 +284,11 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
                   {categoryOptions.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : (
-                <input 
-                  type="text" 
-                  value={trFormData[k] || ''} 
-                  style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} 
-                  onChange={e => handleChange(k, e.target.value)} 
-                />
+                <input type="text" value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #ddd' }} onChange={e => handleChange(k, e.target.value)} />
               )}
             </div>
           ))}
         </div>
-
         <div style={{ marginTop: '30px', display: 'flex', gap: '15px' }}>
           <button onClick={handleSaveTrainee} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', flex: 2 }}>保存する</button>
           <button onClick={() => setShowTrForm(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, color: colors.text, flex: 1 }}>キャンセル</button>
