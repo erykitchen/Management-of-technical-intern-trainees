@@ -78,7 +78,7 @@ const calculateAge = (birthday: string) => {
 
 // --- 3. メインコンポーネント ---
 export default function Home() {
-  const [view, setView] = useState<'list' | 'detail'>('list');
+  const [view, setView] = useState<'list' | 'detail' | 'print_tr' | 'print_co'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
   const [showCoForm, setShowCoForm] = useState(false);
   const [isEditingTr, setIsEditingTr] = useState(false);
@@ -88,6 +88,11 @@ export default function Home() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [trFormData, setTrFormData] = useState<any>(initialTraineeForm);
   const [coFormData, setCoFormData] = useState<any>(initialCompanyForm);
+
+  // 印刷用ステート
+  const [printCoId, setPrintCoId] = useState("");
+  const [printTrIds, setPrintTrIds] = useState<number[]>([]);
+  const [printFields, setPrintFields] = useState<string[]>([]);
 
   const colors = { main: '#FFF9F0', accent: '#F57C00', text: '#2C3E50', gray: '#95A5A6', lightGray: '#F2F2F2', border: '#E0E0E0', white: '#FFFFFF' };
   const sharpRadius = '4px';
@@ -139,18 +144,166 @@ export default function Home() {
     } catch (e) { alert("保存エラー"); }
   };
 
+  // カウント計算
+  const totalTrainees = companies.reduce((sum, c) => sum + (c.trainees?.length || 0), 0);
+  const activeCompanyCount = companies.filter(c => (c.trainees?.length || 0) > 0).length;
+
+  // --- 印刷ビュー (実習生) ---
+  if (view === 'print_tr') {
+    const selectedCompany = companies.find(c => c.id === printCoId);
+    const selectedTrainees = selectedCompany?.trainees.filter((t: any) => printTrIds.includes(t.id)) || [];
+    
+    return (
+      <main style={{ padding: '20px', backgroundColor: '#fff', minHeight: '100vh' }}>
+        <div className="no-print" style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
+          <button onClick={() => setView('list')} style={{ ...btnBase, backgroundColor: colors.lightGray }}>戻る</button>
+          <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷を実行する</button>
+        </div>
+        <h2 style={{ textAlign: 'center' }}>実習生情報一覧 ({selectedCompany?.companyName})</h2>
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px', fontSize: '12px' }}>
+          <thead>
+            <tr>
+              <th style={{ border: '1px solid #000', padding: '8px', backgroundColor: '#eee' }}>項目</th>
+              {selectedTrainees.map((t: any) => (
+                <th key={t.id} style={{ border: '1px solid #000', padding: '8px', backgroundColor: '#eee' }}>{t.traineeName}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {printFields.map(field => (
+              <tr key={field}>
+                <td style={{ border: '1px solid #000', padding: '8px', fontWeight: 'bold', width: '150px' }}>{labelMapTr[field]}</td>
+                {selectedTrainees.map((t: any) => (
+                  <td key={t.id} style={{ border: '1px solid #000', padding: '8px' }}>{t[field] || "-"}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <style dangerouslySetInnerHTML={{ __html: `@media print { .no-print { display: none; } }` }} />
+      </main>
+    );
+  }
+
+  // --- 印刷ビュー (会社) ---
+  if (view === 'print_co') {
+    const selectedCompany = companies.find(c => c.id === printCoId);
+    return (
+      <main style={{ padding: '20px', backgroundColor: '#fff', minHeight: '100vh' }}>
+        <div className="no-print" style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
+          <button onClick={() => setView('list')} style={{ ...btnBase, backgroundColor: colors.lightGray }}>戻る</button>
+          <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷を実行する</button>
+        </div>
+        <h2 style={{ textAlign: 'center' }}>実習実施者情報 ({selectedCompany?.companyName})</h2>
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px', fontSize: '13px' }}>
+          <tbody>
+            {printFields.map(field => (
+              <tr key={field}>
+                <td style={{ border: '1px solid #000', padding: '12px', fontWeight: 'bold', width: '200px', backgroundColor: '#eee' }}>{labelMapCo[field]}</td>
+                <td style={{ border: '1px solid #000', padding: '12px' }}>{selectedCompany?.[field] || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <style dangerouslySetInnerHTML={{ __html: `@media print { .no-print { display: none; } }` }} />
+      </main>
+    );
+  }
+
   if (view === 'list') {
     return (
       <main style={{ padding: '40px', minHeight: '100vh', backgroundColor: '#F9F9F9' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px' }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px', alignItems: 'flex-end' }}>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '800' }}>アシストねっと協同組合</h1>
+            <h1 style={{ fontSize: '24px', fontWeight: '800', margin: 0 }}>アシストねっと協同組合</h1>
+            <div style={{ display: 'flex', gap: '20px', marginTop: '10px' }}>
+               <div style={{ fontSize: '14px', color: colors.text, backgroundColor: '#fff', padding: '8px 15px', borderRadius: '20px', border: `1px solid ${colors.border}` }}>
+                受入中実習生実施者数：<strong>{activeCompanyCount}</strong> 社
+              </div>
+              <div style={{ fontSize: '14px', color: colors.text, backgroundColor: '#fff', padding: '8px 15px', borderRadius: '20px', border: `1px solid ${colors.border}` }}>
+                組合全体受入人数：<strong>{totalTrainees}</strong> 名
+              </div>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ marginRight: '20px', display: 'flex', gap: '10px' }}>
+              <button onClick={() => { setPrintFields([]); setPrintTrIds([]); setPrintCoId(""); setView('print_tr'); }} style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}`, color: colors.text }}>実習生情報の印刷</button>
+              <button onClick={() => { setPrintFields([]); setPrintCoId(""); setView('print_co'); }} style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}`, color: colors.text }}>会社情報の印刷</button>
+            </div>
             <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習生</button>
             <button onClick={() => { setIsEditingCo(false); setCoFormData(initialCompanyForm); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実施者</button>
           </div>
         </header>
+
+        {/* 印刷設定パネル (実習生) */}
+        {view === 'print_tr' && (
+          <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: sharpRadius, border: `1px solid ${colors.accent}`, marginBottom: '30px' }}>
+            <h3 style={{ marginTop: 0 }}>実習生情報の印刷設定</h3>
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '12px', marginBottom: '5px' }}>1. 会社を選択</label>
+              <select style={{ width: '100%', padding: '10px' }} value={printCoId} onChange={(e) => { setPrintCoId(e.target.value); setPrintTrIds([]); }}>
+                <option value="">会社を選択してください</option>
+                {companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+              </select>
+            </div>
+            {printCoId && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '12px', marginBottom: '5px' }}>2. 実習生を選択 (複数可)</label>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  {companies.find(c => c.id === printCoId)?.trainees.map((t: any) => (
+                    <button key={t.id} onClick={() => setPrintTrIds(prev => prev.includes(t.id) ? prev.filter(id => id !== t.id) : [...prev, t.id])}
+                      style={{ ...btnBase, backgroundColor: printTrIds.includes(t.id) ? colors.accent : colors.lightGray, color: printTrIds.includes(t.id) ? '#fff' : colors.text }}>
+                      {t.traineeName}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {printTrIds.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '12px', marginBottom: '10px' }}>3. 印刷する項目にチェック</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
+                  {Object.keys(labelMapTr).map(key => (
+                    <label key={key} style={{ fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <input type="checkbox" checked={printFields.includes(key)} onChange={() => setPrintFields(prev => prev.includes(key) ? prev.filter(f => f !== key) : [...prev, key])} />
+                      {labelMapTr[key]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {printFields.length > 0 && <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷プレビュー表示</button>}
+          </div>
+        )}
+
+        {/* 印刷設定パネル (会社) */}
+        {view === 'print_co' && (
+          <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: sharpRadius, border: `1px solid ${colors.accent}`, marginBottom: '30px' }}>
+            <h3 style={{ marginTop: 0 }}>会社情報の印刷設定</h3>
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '12px', marginBottom: '5px' }}>1. 会社を選択</label>
+              <select style={{ width: '100%', padding: '10px' }} value={printCoId} onChange={(e) => setPrintCoId(e.target.value)}>
+                <option value="">会社を選択してください</option>
+                {companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+              </select>
+            </div>
+            {printCoId && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '12px', marginBottom: '10px' }}>2. 印刷する項目にチェック</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px' }}>
+                  {Object.keys(labelMapCo).map(key => (
+                    <label key={key} style={{ fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <input type="checkbox" checked={printFields.includes(key)} onChange={() => setPrintFields(prev => prev.includes(key) ? prev.filter(f => f !== key) : [...prev, key])} />
+                      {labelMapCo[key]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {printFields.length > 0 && <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷プレビュー表示</button>}
+          </div>
+        )}
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
           {companies.map(c => (
             <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); }} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: sharpRadius, border: `1px solid ${colors.border}`, cursor: 'pointer' }}>
@@ -181,6 +334,7 @@ export default function Home() {
               <div style={{ fontWeight: 'bold' }}>{currentCo[k] || '-'}</div>
             </div>
           ))}
+          <button onClick={() => { setCoFormData(currentCo); setIsEditingCo(true); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.lightGray, width: '100%', marginTop: '20px' }}>情報を編集する</button>
         </aside>
         <section style={{ padding: '30px' }}>
           {!selectedTrId ? (
@@ -191,7 +345,10 @@ export default function Home() {
             </div>
           ) : (
             <div>
-              <h3>{currentTrainee.traineeName}</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3>{currentTrainee.traineeName}</h3>
+                <button onClick={() => { setTrFormData(currentTrainee); setIsEditingTr(true); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.lightGray }}>実習生情報を編集</button>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
                 {Object.keys(labelMapTr).map(k => (
                   <div key={k} style={{ borderBottom: '1px solid #EEE', padding: '5px 0' }}>
