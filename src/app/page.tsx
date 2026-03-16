@@ -55,7 +55,8 @@ const calculateAge = (birthday: string) => {
 
 // --- 2. メインコンポーネント ---
 export default function Home() {
-  const [view, setView] = useState<'list' | 'detail' | 'print_tr' | 'print_co'>('list');
+ // 印刷用の型を追加します
+const [view, setView] = useState<'list' | 'detail' | 'print_tr' | 'print_co'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
   const [showCoForm, setShowCoForm] = useState(false);
   const [isEditingTr, setIsEditingTr] = useState(false);
