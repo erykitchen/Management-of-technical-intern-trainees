@@ -20,7 +20,7 @@ const labelMapTr: { [key: string]: string } = {
   batch: "バッチ(期生)", status: "ステータス", traineeName: "実習生氏名", kana: "フリガナ", 
   traineeZip: "郵便番号", traineeAddress: "住所", 
   category: "区分", nationality: "国籍", birthday: "生年月日", age: "年齢", gender: "性別",
-  period: "期間", stayLimit: "在留期限", cardNumber: "在留カード番号", passportLimit: "パスポート期限",
+  period: "1年", stayLimit: "在留期限", cardNumber: "在留カード番号", passportLimit: "パスポート期限",
   passportNumber: "パスポート番号", certificateNumber: "認定番号", applyDate: "申請日",
   certDate: "認定年月日", entryDate: "実習開始日(入国日)", renewStartDate: "更新手続開始日",
   assignDate: "配属日", endDate: "実習終了日", moveDate: "配属移動日", returnDate: "帰国日",
@@ -78,6 +78,7 @@ const calculateAge = (birthday: string) => {
 
 // --- 3. メインコンポーネント ---
 export default function Home() {
+  // ★型定義を明示的に修正しました
   const [view, setView] = useState<'list' | 'detail' | 'print_tr' | 'print_co'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
   const [showCoForm, setShowCoForm] = useState(false);
@@ -148,65 +149,59 @@ export default function Home() {
   const totalTrainees = companies.reduce((sum, c) => sum + (c.trainees?.length || 0), 0);
   const activeCompanyCount = companies.filter(c => (c.trainees?.length || 0) > 0).length;
 
-  // --- 印刷ビュー (実習生) ---
-  if (view === 'print_tr') {
+  // --- 印刷プレビューモード（表示のみ） ---
+  const [isPreview, setIsPreview] = useState(false);
+
+  if (view === 'print_tr' && isPreview) {
     const selectedCompany = companies.find(c => c.id === printCoId);
     const selectedTrainees = selectedCompany?.trainees.filter((t: any) => printTrIds.includes(t.id)) || [];
-    
     return (
-      <main style={{ padding: '20px', backgroundColor: '#fff', minHeight: '100vh' }}>
-        <div className="no-print" style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
-          <button onClick={() => setView('list')} style={{ ...btnBase, backgroundColor: colors.lightGray }}>戻る</button>
-          <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷を実行する</button>
+      <div style={{ padding: '40px', backgroundColor: '#fff' }}>
+        <div className="no-print" style={{ marginBottom: '20px' }}>
+          <button onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.lightGray }}>設定に戻る</button>
         </div>
         <h2 style={{ textAlign: 'center' }}>実習生情報一覧 ({selectedCompany?.companyName})</h2>
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px', fontSize: '12px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
           <thead>
             <tr>
               <th style={{ border: '1px solid #000', padding: '8px', backgroundColor: '#eee' }}>項目</th>
-              {selectedTrainees.map((t: any) => (
-                <th key={t.id} style={{ border: '1px solid #000', padding: '8px', backgroundColor: '#eee' }}>{t.traineeName}</th>
-              ))}
+              {selectedTrainees.map((t: any) => <th key={t.id} style={{ border: '1px solid #000', padding: '8px' }}>{t.traineeName}</th>)}
             </tr>
           </thead>
           <tbody>
             {printFields.map(field => (
               <tr key={field}>
-                <td style={{ border: '1px solid #000', padding: '8px', fontWeight: 'bold', width: '150px' }}>{labelMapTr[field]}</td>
-                {selectedTrainees.map((t: any) => (
-                  <td key={t.id} style={{ border: '1px solid #000', padding: '8px' }}>{t[field] || "-"}</td>
-                ))}
+                <td style={{ border: '1px solid #000', padding: '8px', fontWeight: 'bold' }}>{labelMapTr[field]}</td>
+                {selectedTrainees.map((t: any) => <td key={t.id} style={{ border: '1px solid #000', padding: '8px' }}>{t[field] || "-"}</td>)}
               </tr>
             ))}
           </tbody>
         </table>
         <style dangerouslySetInnerHTML={{ __html: `@media print { .no-print { display: none; } }` }} />
-      </main>
+      </div>
     );
   }
 
-  // --- 印刷ビュー (会社) ---
-  if (view === 'print_co') {
+  if (view === 'print_co' && isPreview) {
     const selectedCompany = companies.find(c => c.id === printCoId);
     return (
-      <main style={{ padding: '20px', backgroundColor: '#fff', minHeight: '100vh' }}>
-        <div className="no-print" style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
-          <button onClick={() => setView('list')} style={{ ...btnBase, backgroundColor: colors.lightGray }}>戻る</button>
-          <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷を実行する</button>
+      <div style={{ padding: '40px', backgroundColor: '#fff' }}>
+        <div className="no-print" style={{ marginBottom: '20px' }}>
+          <button onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.lightGray }}>設定に戻る</button>
         </div>
         <h2 style={{ textAlign: 'center' }}>実習実施者情報 ({selectedCompany?.companyName})</h2>
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px', fontSize: '13px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
           <tbody>
             {printFields.map(field => (
               <tr key={field}>
-                <td style={{ border: '1px solid #000', padding: '12px', fontWeight: 'bold', width: '200px', backgroundColor: '#eee' }}>{labelMapCo[field]}</td>
+                <td style={{ border: '1px solid #000', padding: '12px', fontWeight: 'bold', width: '250px', backgroundColor: '#eee' }}>{labelMapCo[field]}</td>
                 <td style={{ border: '1px solid #000', padding: '12px' }}>{selectedCompany?.[field] || "-"}</td>
               </tr>
             ))}
           </tbody>
         </table>
         <style dangerouslySetInnerHTML={{ __html: `@media print { .no-print { display: none; } }` }} />
-      </main>
+      </div>
     );
   }
 
@@ -227,18 +222,21 @@ export default function Home() {
           </div>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             <div style={{ marginRight: '20px', display: 'flex', gap: '10px' }}>
-              <button onClick={() => { setPrintFields([]); setPrintTrIds([]); setPrintCoId(""); setView('print_tr'); }} style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}`, color: colors.text }}>実習生情報の印刷</button>
-              <button onClick={() => { setPrintFields([]); setPrintCoId(""); setView('print_co'); }} style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}`, color: colors.text }}>会社情報の印刷</button>
+              <button onClick={() => { setPrintFields([]); setPrintTrIds([]); setPrintCoId(""); setIsPreview(false); setView('print_tr'); }} style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}`, color: colors.text }}>実習生情報の印刷</button>
+              <button onClick={() => { setPrintFields([]); setPrintCoId(""); setIsPreview(false); setView('print_co'); }} style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}`, color: colors.text }}>会社情報の印刷</button>
             </div>
             <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習生</button>
             <button onClick={() => { setIsEditingCo(false); setCoFormData(initialCompanyForm); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実施者</button>
           </div>
         </header>
 
-        {/* 印刷設定パネル (実習生) */}
+        {/* --- 印刷設定パネル (実習生) --- */}
         {view === 'print_tr' && (
           <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: sharpRadius, border: `1px solid ${colors.accent}`, marginBottom: '30px' }}>
-            <h3 style={{ marginTop: 0 }}>実習生情報の印刷設定</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <h3>実習生情報の印刷設定</h3>
+              <button onClick={() => setView('list')} style={{ background: 'none', border: 'none', color: colors.gray, cursor: 'pointer' }}>閉じる ✕</button>
+            </div>
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', fontSize: '12px', marginBottom: '5px' }}>1. 会社を選択</label>
               <select style={{ width: '100%', padding: '10px' }} value={printCoId} onChange={(e) => { setPrintCoId(e.target.value); setPrintTrIds([]); }}>
@@ -272,14 +270,17 @@ export default function Home() {
                 </div>
               </div>
             )}
-            {printFields.length > 0 && <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷プレビュー表示</button>}
+            {printFields.length > 0 && <button onClick={() => { setIsPreview(true); setTimeout(() => window.print(), 500); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷プレビューを表示して印刷</button>}
           </div>
         )}
 
-        {/* 印刷設定パネル (会社) */}
+        {/* --- 印刷設定パネル (会社) --- */}
         {view === 'print_co' && (
           <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: sharpRadius, border: `1px solid ${colors.accent}`, marginBottom: '30px' }}>
-            <h3 style={{ marginTop: 0 }}>会社情報の印刷設定</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <h3>会社情報の印刷設定</h3>
+              <button onClick={() => setView('list')} style={{ background: 'none', border: 'none', color: colors.gray, cursor: 'pointer' }}>閉じる ✕</button>
+            </div>
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', fontSize: '12px', marginBottom: '5px' }}>1. 会社を選択</label>
               <select style={{ width: '100%', padding: '10px' }} value={printCoId} onChange={(e) => setPrintCoId(e.target.value)}>
@@ -300,7 +301,7 @@ export default function Home() {
                 </div>
               </div>
             )}
-            {printFields.length > 0 && <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷プレビュー表示</button>}
+            {printFields.length > 0 && <button onClick={() => { setIsPreview(true); setTimeout(() => window.print(), 500); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷プレビューを表示して印刷</button>}
           </div>
         )}
 
