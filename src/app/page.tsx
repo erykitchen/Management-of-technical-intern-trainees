@@ -78,7 +78,6 @@ const calculateAge = (birthday: string) => {
 
 // --- 3. メインコンポーネント ---
 export default function Home() {
-  // ★型定義を明示的に修正しました
   const [view, setView] = useState<'list' | 'detail' | 'print_tr' | 'print_co'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
   const [showCoForm, setShowCoForm] = useState(false);
@@ -94,6 +93,7 @@ export default function Home() {
   const [printCoId, setPrintCoId] = useState("");
   const [printTrIds, setPrintTrIds] = useState<number[]>([]);
   const [printFields, setPrintFields] = useState<string[]>([]);
+  const [isPreview, setIsPreview] = useState(false);
 
   const colors = { main: '#FFF9F0', accent: '#F57C00', text: '#2C3E50', gray: '#95A5A6', lightGray: '#F2F2F2', border: '#E0E0E0', white: '#FFFFFF' };
   const sharpRadius = '4px';
@@ -149,9 +149,7 @@ export default function Home() {
   const totalTrainees = companies.reduce((sum, c) => sum + (c.trainees?.length || 0), 0);
   const activeCompanyCount = companies.filter(c => (c.trainees?.length || 0) > 0).length;
 
-  // --- 印刷プレビューモード（表示のみ） ---
-  const [isPreview, setIsPreview] = useState(false);
-
+  // --- 印刷プレビュー表示 ---
   if (view === 'print_tr' && isPreview) {
     const selectedCompany = companies.find(c => c.id === printCoId);
     const selectedTrainees = selectedCompany?.trainees.filter((t: any) => printTrIds.includes(t.id)) || [];
