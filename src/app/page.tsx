@@ -30,7 +30,6 @@ const labelMapTr: { [key: string]: string } = {
 const categoryOptions = ["技能実習1号", "技能実習2号(1)", "技能実習2号(2)", "特定技能", "実習終了"];
 const batchOptions = ["なし", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
 const nationalityOptions = ["ベトナム", "中国", "インドネシア", "フィリピン", "ミャンマー", "カンボジア", "タイ", "その他（手入力）"];
-// ステータス追加
 const statusOptions = ["選択する", "認定申請準備中", "認定手続中", "ビザ申請中", "入国待機", "入国後講習中", "実習中", "一時帰国中", "その他", "失踪"];
 const acceptanceOptions = ["選択する", "受入中", "無し"];
 const genderOptions = ["男", "女"];
@@ -74,7 +73,6 @@ const convertToAD = (str: string) => {
   return text;
 };
 
-// アラート機能の変更
 const getAlertStyle = (dateStr: string, category: string): any => {
   if (!dateStr || category === "実習終了") return { color: '#2C3E50', border: '1px solid #E0E0E0' };
   const ad = convertToAD(dateStr);
@@ -94,7 +92,6 @@ const getAlertStyle = (dateStr: string, category: string): any => {
   return { border: '1px solid #E0E0E0' };
 };
 
-// リスト表示用のアラート有無判定
 const hasAlert = (t: any) => {
   const dates = [t.stayLimit, t.passportLimit, t.endDate];
   return dates.some(d => {
@@ -132,8 +129,8 @@ const calculateDates = (entryDateStr: string) => {
 export default function Home() {
   const [view, setView] = useState<'list' | 'detail' | 'print_tr' | 'print_co'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
-  const [showTrMethodModal, setShowTrMethodModal] = useState(false); // 新規：入力方法選択
-  const [showCsvModal, setShowCsvModal] = useState(false); // 新規：CSVモーダル
+  const [showTrMethodModal, setShowTrMethodModal] = useState(false);
+  const [showCsvModal, setShowCsvModal] = useState(false);
   const [showCoForm, setShowCoForm] = useState(false);
   const [isEditingTr, setIsEditingTr] = useState(false);
   const [isEditingCo, setIsEditingCo] = useState(false);
@@ -146,7 +143,6 @@ export default function Home() {
   const [coFormData, setCoFormData] = useState<any>(initialCompanyForm);
   const [filterBatch, setFilterBatch] = useState<string>('すべて');
 
-  // 印刷用ステート
   const [printCoId, setPrintCoId] = useState("");
   const [printTrIds, setPrintTrIds] = useState<number[]>([]);
   const [printFields, setPrintFields] = useState<string[]>([]);
@@ -243,7 +239,6 @@ export default function Home() {
     } catch (e) { alert("保存エラー"); }
   };
 
-  // CSV取り込み用関数
   const handleCsvImport = async (companyId: string, file: File) => {
     if (!companyId) { alert("会社を選択してください"); return; }
     const reader = new FileReader();
@@ -253,7 +248,8 @@ export default function Home() {
       if (lines.length < 2) return;
       
       const newTrainees: any[] = [];
-      const headers = lines[0].split(/[,\t]/); // カンマまたはタブ
+      const headers = lines[0].split(/[,\t]/).map(h => h.trim());
+      const nameIdxInCsv = headers.indexOf("実習生氏名");
       
       const csvToKeyMap: any = {
         "バッチ(期生)": "batch", "ステータス": "status", "実習生氏名": "traineeName", "フリガナ": "kana",
@@ -266,9 +262,17 @@ export default function Home() {
 
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(/[,\t]/);
+        
+        // 修正：実習生氏名が空の行、または全項目が空の行はスキップ
+        if (nameIdxInCsv !== -1) {
+          if (!values[nameIdxInCsv] || values[nameIdxInCsv].trim() === "") continue;
+        } else if (!values.some(v => v.trim() !== "")) {
+          continue;
+        }
+
         let trainee: any = { ...initialTraineeForm, id: Date.now() + i, category: "技能実習1号" };
         headers.forEach((h, idx) => {
-          const key = csvToKeyMap[h.trim()];
+          const key = csvToKeyMap[h];
           if (key) {
             let val = values[idx]?.trim() || "";
             if (key !== 'traineeName' && key !== 'kana' && key !== 'traineeAddress' && key !== 'cardNumber' && key !== 'passportNumber' && key !== 'certificateNumber' && key !== 'memo') {
@@ -277,13 +281,17 @@ export default function Home() {
             trainee[key] = val;
           }
         });
-        // 自動計算
         if (trainee.birthday) trainee.age = calculateAge(trainee.birthday);
         if (trainee.entryDate) {
           const { end, renew } = calculateDates(trainee.entryDate);
           trainee.endDate = end; trainee.renewStartDate = renew;
         }
         newTrainees.push(trainee);
+      }
+
+      if (newTrainees.length === 0) {
+        alert("有効なデータが見つかりませんでした。");
+        return;
       }
 
       try {
@@ -320,7 +328,6 @@ export default function Home() {
     sum + (c.trainees || []).filter((t: any) => t.category !== "実習終了").length, 0
   );
 
-  // --- 印刷プレビュー画面（実習生） ---
   if (view === 'print_tr' && isPreview) {
     const selectedCompany = companies.find(c => c.id === printCoId);
     const selectedTrainees = selectedCompany?.trainees.filter((t: any) => printTrIds.includes(t.id)) || [];
@@ -347,7 +354,6 @@ export default function Home() {
     );
   }
 
-  // --- 印刷プレビュー画面（会社） ---
   if (view === 'print_co' && isPreview) {
     const selectedCompany = companies.find(c => c.id === printCoId);
     return (
@@ -682,7 +688,6 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
                   <select style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #CCC' }} value={nationalityOptions.includes(trFormData[k]) ? trFormData[k] : "その他（手入力）"} onChange={e => handleChange(k, e.target.value)}>
                     {nationalityOptions.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
-                  {/* その他（手入力）選択時のテキストボックス */}
                   {(!nationalityOptions.includes(trFormData[k]) || trFormData[k] === "その他（手入力）") && (
                     <input 
                       type="text" 
