@@ -284,7 +284,11 @@ export default function Home() {
 
   const totalActiveTrainees = companies.reduce((sum, c) => sum + (c.trainees || []).filter((t: any) => t.category !== "実習終了").length, 0);
 
- // --- 印刷プレビュー表示 (isPreview === true の時) ---
+// --- 追加するステート ---
+// Homeコンポーネント内の印刷用ステート付近に追加してください
+const [printMode, setPrintMode] = useState<'individual' | 'table'>('individual');
+
+// --- 印刷プレビュー表示部分 (修正版) ---
 if ((view === 'print_tr' || view === 'print_co') && isPreview) {
   const selectedCompany = companies.find(c => c.id === printCoId);
   const selectedTrainees = selectedCompany?.trainees.filter((t: any) => printTrIds.includes(t.id)) || [];
@@ -296,42 +300,64 @@ if ((view === 'print_tr' || view === 'print_co') && isPreview) {
           .no-print { display: none !important; } 
           body { background: #fff; margin: 0; }
           .page-break { page-break-after: always; }
+          @page { size: ${printMode === 'table' ? 'A4 landscape' : 'A4 portrait'}; margin: 10mm; }
         }
-        table { border-collapse: collapse; width: 100%; table-layout: fixed; }
-        th, td { border: 1px solid #000; padding: 6px 10px; font-size: 12px; text-align: left; word-break: break-all; }
-        th { background-color: #f2f2f2; width: 35%; }
+        .individual-table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+        .individual-table th, .individual-table td { border: 1px solid #000; padding: 8px 12px; font-size: 13px; text-align: left; }
+        .individual-table th { background-color: #f2f2f2; width: 30%; }
+
+        .list-table { border-collapse: collapse; width: 100%; table-layout: auto; }
+        .list-table th, .list-table td { border: 1px solid #000; padding: 4px 6px; font-size: 10px; text-align: left; word-break: break-all; }
+        .list-table th { background-color: #f2f2f2; }
       `}</style>
       
-      <div className="no-print" style={{ padding: '20px', display: 'flex', gap: '10px', background: '#eee', borderBottom: '1px solid #ccc' }}>
+      <div className="no-print" style={{ padding: '20px', display: 'flex', gap: '10px', background: '#eee', borderBottom: '1px solid #ccc', alignItems: 'center' }}>
         <button onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.gray, color: '#fff' }}>設定に戻る</button>
         <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷を実行</button>
+        <span style={{ fontSize: '12px' }}>モード: {printMode === 'individual' ? '管理簿（1人1枚）' : '一覧表（5人/枚）'}</span>
       </div>
       
-      {view === 'print_tr' ? (
-        selectedTrainees.map((t: any, index: number) => (
-          <div key={t.id} className="page-break" style={{ padding: '40px', maxWidth: '800px', margin: '0 auto' }}>
-            <h2 style={{ fontSize: '18px', marginBottom: '15px', textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '5px' }}>
-              実習生個別情報シート
-            </h2>
-            <div style={{ marginBottom: '10px', textAlign: 'right', fontSize: '12px' }}>所属企業: {selectedCompany?.companyName}</div>
-            <table>
-              <tbody>
-                {printFields.map(key => (
-                  <tr key={key}>
-                    <th>{labelMapTr[key]}</th>
-                    <td>{t[key] || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))
-      ) : (
-        <div style={{ padding: '40px', maxWidth: '800px', margin: '0 auto' }}>
-          <h2 style={{ fontSize: '18px', marginBottom: '15px', textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '5px' }}>
-            実習実施者（受入企業）情報詳細
-          </h2>
-          <table>
+      <div style={{ padding: '40px' }}>
+        <h2 style={{ fontSize: '18px', marginBottom: '15px', textAlign: 'center', borderBottom: '2px solid #000' }}>
+          {view === 'print_tr' ? (printMode === 'individual' ? '技能実習生管理簿' : '実習生一覧表') : '実習実施者情報詳細'}
+        </h2>
+
+        {view === 'print_tr' && printMode === 'individual' ? (
+          // --- 管理簿（カルテ方式） ---
+          selectedTrainees.map((t: any) => (
+            <div key={t.id} className="page-break" style={{ marginBottom: '50px' }}>
+              <div style={{ textAlign: 'right', fontSize: '12px', marginBottom: '5px' }}>所属: {selectedCompany?.companyName}</div>
+              <table className="individual-table">
+                <tbody>
+                  {printFields.map(key => (
+                    <tr key={key}>
+                      <th>{labelMapTr[key]}</th>
+                      <td>{t[key] || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))
+        ) : view === 'print_tr' && printMode === 'table' ? (
+          // --- 一覧表形式 ---
+          <table className="list-table">
+            <thead>
+              <tr>
+                {printFields.map(key => <th key={key}>{labelMapTr[key]}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {selectedTrainees.map((t: any) => (
+                <tr key={t.id}>
+                  {printFields.map(key => <td key={key}>{t[key] || '-'}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          // --- 会社情報（常に個票形式） ---
+          <table className="individual-table">
             <tbody>
               {printFields.map(key => (
                 <tr key={key}>
@@ -341,14 +367,34 @@ if ((view === 'print_tr' || view === 'print_co') && isPreview) {
               ))}
             </tbody>
           </table>
-          <div style={{ marginTop: '20px', fontSize: '12px' }}>
-            作成日: {new Date().toLocaleDateString('ja-JP')}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
+
+// --- 印刷設定画面の「3. レイアウト選択」部分 (修正版) ---
+// 設定画面の grid 内に「3. レイアウト選択」を追加します
+{/* 右側：項目選択の下あたりに追加 */}
+<div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '8px', border: `1px solid ${colors.border}`, marginTop: '20px', gridColumn: 'span 2' }}>
+  <h3 style={{ marginBottom: '15px', fontSize: '16px' }}>3. レイアウト形式を選択</h3>
+  <div style={{ display: 'flex', gap: '20px' }}>
+    <label style={{ flex: 1, padding: '15px', border: `2px solid ${printMode === 'individual' ? colors.accent : colors.border}`, borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <input type="radio" name="printMode" checked={printMode === 'individual'} onChange={() => setPrintMode('individual')} />
+      <div>
+        <div style={{ fontWeight: 'bold' }}>管理簿形式</div>
+        <div style={{ fontSize: '11px', color: colors.gray }}>1人あたりA4用紙1枚で詳しく印刷します。</div>
+      </div>
+    </label>
+    <label style={{ flex: 1, padding: '15px', border: `2px solid ${printMode === 'table' ? colors.accent : colors.border}`, borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <input type="radio" name="printMode" checked={printMode === 'table'} onChange={() => setPrintMode('table')} />
+      <div>
+        <div style={{ fontWeight: 'bold' }}>一覧表形式</div>
+        <div style={{ fontSize: '11px', color: colors.gray }}>5人程度をA4用紙1枚（横向き）にまとめます。</div>
+      </div>
+    </label>
+  </div>
+</div>
 
   // --- 印刷設定画面 (!isPreview の時) ---
   if ((view === 'print_tr' || view === 'print_co') && !isPreview) {
