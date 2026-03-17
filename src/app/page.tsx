@@ -2,16 +2,19 @@
 import { useState, useEffect } from 'react';
 import { db } from './firebase';
 import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+// 1. PapaParseをインポート
+import Papa from 'papaparse';
 
-// 分割したファイルからのインポート
 import { 
   labelMapCo, labelMapTr, categoryOptions, batchOptions, 
   batchColorMap, initialCompanyForm, initialTraineeForm 
 } from './lib/constants';
-import { convertToAD, checkAlert } from './lib/utils';
+// 2. 年齢計算用の calculateAge を utils から追加インポート（未追加なら utils.ts にある前提）
+import { convertToAD, checkAlert, calculateAge } from './lib/utils';
 import { CoFormModal, TrFormModal } from './components/Modals';
 
 export default function Home() {
+  // ...既存のState群...
   const [view, setView] = useState<'list' | 'detail' | 'print_tr' | 'print_co'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
   const [showCoForm, setShowCoForm] = useState(false);
@@ -35,6 +38,89 @@ export default function Home() {
   const sharpRadius = '4px';
   const btnBase = { padding: '10px 18px', borderRadius: sharpRadius, border: 'none', cursor: 'pointer', fontWeight: '600' as const, fontSize: '13px' };
   const grayCBtn = { width: '20px', height: '20px', fontSize: '9px', cursor: 'pointer', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: '3px', color: colors.gray, marginLeft: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+
+  // --- CSVインポート・新規追加の統合ロジック ---
+
+  const handleAddTraineeClick = (targetCoId?: string) => {
+    const targetId = targetCoId || currentCo?.id;
+    if (!targetId) {
+      alert("会社を選択してから実行してください");
+      return;
+    }
+
+    const mode = confirm("一括登録しますか？\n\n[OK] CSVファイルから読み込む\n[キャンセル] 手入力で1人ずつ追加する");
+
+    if (mode) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.csv';
+      input.onchange = (e: any) => handleCSVUpload(e, targetId);
+      input.click();
+    } else {
+      setTrFormData({ ...initialTraineeForm, targetCompanyId: targetId });
+      setIsEditingTr(false);
+      setShowTrForm(true);
+    }
+  };
+
+  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>, targetId: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const targetCompany = companies.find(c => c.id === targetId);
+        
+        const newTrainees = results.data.map((row: any) => {
+          const birthday = convertToAD(row["生年月日"] || "");
+          return {
+            ...initialTraineeForm,
+            id: Date.now() + Math.random(),
+            // 指定の20項目をマッピング
+            traineeName: row["実習生氏名"] || "",
+            kana: row["フリガナ"] || "",
+            batch: row["バッチ(期生)"] || "",
+            status: row["ステータス"] || "入国待機",
+            zip: row["郵便番号"] || "",
+            address: row["住所"] || "",
+            nationality: row["国籍"] || "ベトナム",
+            birthday: birthday,
+            gender: row["性別"] || "男",
+            residenceLimit: convertToAD(row["在留期限"] || ""),
+            residenceCardNumber: row["在留カード番号"] || "",
+            passportLimit: convertToAD(row["パスポート期限"] || ""),
+            passportNumber: row["パスポート番号"] || "",
+            certificateNumber: row["認定番号"] || "",
+            applicationDate: convertToAD(row["申請日"] || ""),
+            certificationDate: convertToAD(row["認定年月日"] || ""),
+            entryDate: convertToAD(row["実習開始日(入国日)"] || ""),
+            assignmentDate: convertToAD(row["配属日"] || ""),
+            employmentNotificationDate: convertToAD(row["外国人雇用条件届出日"] || ""),
+            // 自動入力項目
+            category: "技能実習1号",
+            age: calculateAge(birthday),
+            period: "1年",
+            phaseHistory: []
+          };
+        });
+
+        if (newTrainees.length === 0) return alert("データがありません");
+
+        try {
+          const updatedTrainees = [...(targetCompany.trainees || []), ...newTrainees];
+          await updateDoc(doc(db, "companies", targetId), { trainees: updatedTrainees });
+          alert(`${newTrainees.length}名の一括登録が完了しました！`);
+          fetchCompanies();
+        } catch (err) {
+          alert("一括登録に失敗しました");
+        }
+      }
+    });
+  };
+
+  // ...fetchCompanies, handleSave系, handleDelete系は既存通り...
 
   const fetchCompanies = async () => {
     const q = query(collection(db, "companies"), orderBy("createdAt", "desc"));
@@ -143,55 +229,57 @@ export default function Home() {
     sum + (c.trainees || []).filter((t: any) => t.category !== "実習終了").length, 0
   );
 
-  if (view === 'print_tr' && isPreview) {
-    const selectedCompany = companies.find(c => c.id === printCoId);
-    const selectedTrainees = selectedCompany?.trainees.filter((t: any) => printTrIds.includes(t.id)) || [];
-    return (
-      <div className="print-area" style={{ padding: '20px', backgroundColor: '#fff' }}>
-        <style>{`@media print { .no-print { display: none !important; } body { background: #fff; } }`}</style>
-        <button className="no-print" onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', marginBottom: '20px' }}>設定に戻る</button>
-        {selectedTrainees.map((t: any) => (
-          <div key={t.id} style={{ marginBottom: '40px', pageBreakAfter: 'always', border: '1px solid #000', padding: '20px' }}>
-            <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '10px' }}>実習生情報シート ({selectedCompany?.companyName})</h2>
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
-              <tbody>
-                {printFields.map(key => (
-                  <tr key={key}>
-                    <td style={{ border: '1px solid #000', padding: '8px', width: '30%', backgroundColor: '#f2f2f2', fontWeight: 'bold' }}>{labelMapTr[key]}</td>
-                    <td style={{ border: '1px solid #000', padding: '8px' }}>{t[key] || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (view === 'print_co' && isPreview) {
-    const selectedCompany = companies.find(c => c.id === printCoId);
-    return (
-      <div className="print-area" style={{ padding: '20px', backgroundColor: '#fff' }}>
-        <style>{`@media print { .no-print { display: none !important; } body { background: #fff; } }`}</style>
-        <button className="no-print" onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', marginBottom: '20px' }}>設定に戻る</button>
-        <div style={{ border: '1px solid #000', padding: '20px' }}>
-          <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '10px' }}>実習実施者（受入企業）情報詳細</h2>
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
-            <tbody>
-              {printFields.map(key => (
-                <tr key={key}>
-                  <td style={{ border: '1px solid #000', padding: '8px', width: '30%', backgroundColor: '#f2f2f2', fontWeight: 'bold' }}>{labelMapCo[key]}</td>
-                  <td style={{ border: '1px solid #000', padding: '8px' }}>{selectedCompany?.[key] || '-'}</td>
-                </tr>
+  // --- 印刷ビュー (略) ---
+  if ((view === 'print_tr' || view === 'print_co') && isPreview) {
+      // 提供いただいた印刷用JSXをそのまま使用
+      const selectedCompany = companies.find(c => c.id === printCoId);
+      if (view === 'print_tr') {
+          const selectedTrainees = selectedCompany?.trainees.filter((t: any) => printTrIds.includes(t.id)) || [];
+          return (
+            <div className="print-area" style={{ padding: '20px', backgroundColor: '#fff' }}>
+              <style>{`@media print { .no-print { display: none !important; } body { background: #fff; } }`}</style>
+              <button className="no-print" onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', marginBottom: '20px' }}>設定に戻る</button>
+              {selectedTrainees.map((t: any) => (
+                <div key={t.id} style={{ marginBottom: '40px', pageBreakAfter: 'always', border: '1px solid #000', padding: '20px' }}>
+                  <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '10px' }}>実習生情報シート ({selectedCompany?.companyName})</h2>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                    <tbody>
+                      {printFields.map(key => (
+                        <tr key={key}>
+                          <td style={{ border: '1px solid #000', padding: '8px', width: '30%', backgroundColor: '#f2f2f2', fontWeight: 'bold' }}>{labelMapTr[key]}</td>
+                          <td style={{ border: '1px solid #000', padding: '8px' }}>{t[key] || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
+            </div>
+          );
+      } else {
+        return (
+            <div className="print-area" style={{ padding: '20px', backgroundColor: '#fff' }}>
+              <style>{`@media print { .no-print { display: none !important; } body { background: #fff; } }`}</style>
+              <button className="no-print" onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', marginBottom: '20px' }}>設定に戻る</button>
+              <div style={{ border: '1px solid #000', padding: '20px' }}>
+                <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '10px' }}>実習実施者（受入企業）情報詳細</h2>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                  <tbody>
+                    {printFields.map(key => (
+                      <tr key={key}>
+                        <td style={{ border: '1px solid #000', padding: '8px', width: '30%', backgroundColor: '#f2f2f2', fontWeight: 'bold' }}>{labelMapCo[key]}</td>
+                        <td style={{ border: '1px solid #000', padding: '8px' }}>{selectedCompany?.[key] || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+      }
   }
 
+  // --- メインビュー ---
   if (view === 'list' || view === 'print_tr' || view === 'print_co') {
     return (
       <main style={{ padding: '40px', backgroundColor: '#F9F9F9', minHeight: '100vh', color: colors.text }}>
@@ -207,11 +295,23 @@ export default function Home() {
           <div style={{ display: 'flex', gap: '12px' }}>
             <button onClick={() => { setPrintFields([]); setPrintTrIds([]); setPrintCoId(""); setIsPreview(false); setView('print_tr'); }} style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}`, color: colors.text }}>実習生情報の印刷</button>
             <button onClick={() => { setPrintFields([]); setPrintCoId(""); setIsPreview(false); setView('print_co'); }} style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}`, color: colors.text }}>会社情報の印刷</button>
-            <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習生</button>
+            
+            {/* 統合した新規追加ボタン */}
+            <button onClick={() => {
+                // 一覧画面では会社が未選択なので、まず「どの会社に追加するか」を選択させるフローが必要ですが、
+                // ここでは一番直近の会社や、アラートを出す形にします。
+                const lastCo = companies[0]?.id;
+                if (!lastCo) return alert("まず「新規実施者」を登録してください");
+                const coId = prompt("追加先の会社ID、または名前を入力してください（詳細画面から追加するのが確実です）", companies[0].companyName);
+                const found = companies.find(c => c.companyName === coId || c.id === coId);
+                if (found) handleAddTraineeClick(found.id);
+            }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習生</button>
+            
             <button onClick={() => { setIsEditingCo(false); setCoFormData(initialCompanyForm); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実施者</button>
           </div>
         </header>
 
+        {/* 印刷設定UI (略) ... */}
         {(view === 'print_tr' || view === 'print_co') && (
           <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '4px', border: `2px solid ${colors.accent}`, marginBottom: '30px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -224,7 +324,7 @@ export default function Home() {
               <option value="">対象の会社を選択してください</option>
               {companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
             </select>
-
+            {/* ...他、既存の印刷UI... */}
             {view === 'print_tr' && printCoId && (
               <div style={{ marginBottom: '20px' }}>
                 <p style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '10px' }}>印刷する実習生を選択：</p>
@@ -235,7 +335,6 @@ export default function Home() {
                 </div>
               </div>
             )}
-
             {(printCoId && (view === 'print_co' || printTrIds.length > 0)) && (
               <div>
                 <p style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '10px' }}>出力項目を選択：</p>
@@ -290,7 +389,8 @@ export default function Home() {
         <div style={{ display: 'flex', gap: '10px' }}>
           {!selectedTrId ? (
             <>
-              <button onClick={() => { setTrFormData({...initialTraineeForm, targetCompanyId: currentCo.id}); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 実習生追加</button>
+              {/* 詳細画面での追加ボタンも統合 */}
+              <button onClick={() => handleAddTraineeClick()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 実習生追加</button>
               <button onClick={() => { setIsEditingCo(true); setCoFormData(currentCo); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>会社編集</button>
               <button onClick={handleDeleteCompany} style={{ ...btnBase, backgroundColor: '#FFF', border: `1px solid ${colors.danger}`, color: colors.danger }}>会社削除</button>
             </>
@@ -304,6 +404,7 @@ export default function Home() {
         </div>
       </nav>
 
+      {/* サイドバー・メインコンテンツは既存通り */}
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', flex: 1, backgroundColor: colors.border, gap: '1px' }}>
         <aside style={{ backgroundColor: '#FFF', padding: '30px', overflowY: 'auto', maxHeight: 'calc(100vh - 65px)' }}>
           <h2 style={{ fontSize: '18px', marginBottom: '20px', borderBottom: `2px solid ${colors.main}`, paddingBottom: '10px' }}>
@@ -328,6 +429,7 @@ export default function Home() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                   <h3 style={{ fontSize: '14px', color: colors.gray }}>実習生一覧</h3>
+                  {/* ...タブ・フィルタUI... */}
                   <div style={{ display: 'flex', gap: '4px', backgroundColor: colors.lightGray, padding: '3px', borderRadius: '6px' }}>
                     <button onClick={() => setFilterBatch('すべて')} style={{ padding: '4px 10px', fontSize: '11px', border: 'none', borderRadius: '4px', cursor: 'pointer', backgroundColor: filterBatch === 'すべて' ? colors.white : 'transparent', color: filterBatch === 'すべて' ? colors.accent : colors.gray }}>すべて</button>
                     {batchOptions.filter(b => b !== "なし" && (currentCo.trainees || []).some((t: any) => t.batch === b)).map(b => (
@@ -360,6 +462,7 @@ export default function Home() {
             </div>
           ) : (
             <div style={{ backgroundColor: '#FFF', padding: '35px', border: `1px solid ${colors.border}`, borderRadius: sharpRadius }}>
+              {/* ...詳細情報表示... */}
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '25px' }}>
                 <h3 style={{ fontSize: '20px' }}>{(activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]).traineeName}</h3>
                 {activeTab === 'current' && currentTrainee.phaseHistory?.length > 0 && (
