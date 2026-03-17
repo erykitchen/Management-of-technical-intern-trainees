@@ -1,9 +1,11 @@
 "use client";
+
 import { useState, useEffect, useRef } from 'react';
-import { db } from './firebase.js';
-import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { db } from './firebase'; 
+import { collection, getDocs, query, orderBy, doc, updateDoc } from "firebase/firestore";
 import { Company, Trainee } from './types';
 
+// 作成したフォルダからコンポーネントを読み込み
 import TraineeDetail from './components/TraineeDetail';
 import CompanyForm from './components/CompanyForm';
 import TraineeForm from './components/TraineeForm';
@@ -26,57 +28,91 @@ export default function Home() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (isAuthenticated) fetchCompanies(); }, [isAuthenticated]);
+  useEffect(() => {
+    if (isAuthenticated) fetchCompanies();
+  }, [isAuthenticated]);
 
   const fetchCompanies = async () => {
-    const q = query(collection(db, "companies"), orderBy("createdAt", "desc"));
-    const snap = await getDocs(q);
-    setCompanies(snap.docs.map(d => ({ id: d.id, ...d.data() } as Company)));
+    try {
+      const q = query(collection(db, "companies"), orderBy("createdAt", "desc"));
+      const snap = await getDocs(q);
+      setCompanies(snap.docs.map(d => ({ id: d.id, ...d.data() } as Company)));
+    } catch (err) {
+      console.error("データ取得エラー:", err);
+    }
   };
 
-  // CSVインポート完全版 (Shift-JIS対応)
+  // 【復活】CSVインポートロジック（Shift-JIS対応・全項目初期化）
   const handleCSVImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !targetCoId) return;
+
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const text = event.target?.result as string;
-      const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
-      if (lines.length < 2) return alert("データが空か不正です");
+      try {
+        const text = event.target?.result as string;
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+        if (lines.length < 2) return alert("データがありません");
 
-      const company = companies.find(c => c.id === targetCoId);
-      if (!company) return;
+        const company = companies.find(c => c.id === targetCoId);
+        if (!company) return;
 
-      const newTrainees = [...(company.trainees || [])];
-      let maxId = newTrainees.length > 0 ? Math.max(...newTrainees.map(t => t.id)) : 0;
+        const newTrainees = [...(company.trainees || [])];
+        let maxId = newTrainees.length > 0 ? Math.max(...newTrainees.map(t => t.id)) : 0;
 
-      lines.slice(1).forEach(line => {
-        const c = line.split(',').map(s => s.trim());
-        if (c[0]) {
-          newTrainees.push({
-            id: ++maxId, traineeName: c[0], kana: c[1] || "", 
-            batch: c[2] || "①", category: c[3] || "技能実習1号",
-            status: "実習中", phaseHistory: [],
-            traineeZip: "", traineeAddress: "", nationality: "ベトナム", birthday: "", age: "", gender: "男"
-          } as any);
-        }
-      });
+        lines.slice(1).forEach(line => {
+          const c = line.split(',').map(s => s.trim());
+          if (c[0]) {
+            newTrainees.push({
+              id: ++maxId,
+              traineeName: c[0],
+              kana: c[1] || "",
+              batch: c[2] || "①",
+              category: c[3] || "技能実習1号",
+              status: "実習中",
+              nationality: "ベトナム",
+              phaseHistory: [],
+              traineeZip: "", traineeAddress: "", birthday: "", age: "", gender: "男",
+              period: "", stayLimit: "", cardNumber: "", passportLimit: "", passportNumber: "",
+              certificateNumber: "", applyDate: "", certDate: "", entryDate: "",
+              renewStartDate: "", assignDate: "", endDate: "", moveDate: "",
+              returnDate: "", employmentReportDate: "", trainingStartDate: "",
+              trainingEndDate: "", memo: ""
+            } as any);
+          }
+        });
 
-      await updateDoc(doc(db, "companies", targetCoId), { trainees: newTrainees });
-      alert("CSVから実習生を一括追加しました");
-      fetchCompanies();
+        await updateDoc(doc(db, "companies", targetCoId), { trainees: newTrainees });
+        alert(`${lines.length - 1}名の実習生を追加しました`);
+        fetchCompanies();
+      } catch (err) {
+        alert("CSVの読み込みに失敗しました。形式を確認してください。");
+      }
     };
+    // 日本語（和暦等）が含まれるためShift-JISで読み込み
     reader.readAsText(file, "Shift-JIS");
   };
 
-  // ログイン処理
-  const handleLogin = () => { if (password === "4647") setIsAuthenticated(true); else alert("パスワードが違います"); };
+  const handleLogin = () => {
+    if (password === "4647") {
+      setIsAuthenticated(true);
+    } else {
+      alert("パスワードが正しくありません");
+    }
+  };
 
   if (!isAuthenticated) return (
     <div style={{ height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f0f2f5' }}>
       <div style={{ padding: '50px', background: '#fff', borderRadius: '15px', boxShadow: '0 10px 40px rgba(0,0,0,0.1)', textAlign: 'center' }}>
         <h2 style={{ marginBottom: '30px', color: '#2C3E50', fontSize: '24px' }}>アシストねっと 管理ログイン</h2>
-        <input type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ padding: '15px', width: '280px', marginBottom: '25px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '16px' }} placeholder="パスワードを入力" onKeyDown={e => e.key === 'Enter' && handleLogin()} />
+        <input 
+          type="password" 
+          value={password} 
+          onChange={e => setPassword(e.target.value)} 
+          style={{ padding: '15px', width: '280px', marginBottom: '25px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '16px' }} 
+          placeholder="パスワードを入力" 
+          onKeyDown={e => e.key === 'Enter' && handleLogin()}
+        />
         <br />
         <button onClick={handleLogin} style={{ width: '280px', padding: '15px', background: '#F57C00', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>ログイン</button>
       </div>
@@ -87,10 +123,11 @@ export default function Home() {
 
   return (
     <main style={{ padding: '40px', background: '#F4F7F9', minHeight: '100vh' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '35px', padding: '30px', background: '#fff', borderRadius: '15px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+      {/* 【復活】重厚なヘッダーデザイン */}
+      <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '35px', padding: '30px', background: '#fff', borderRadius: '15px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', border: '1px solid #eee' }}>
         <div onClick={() => setView('list')} style={{ cursor: 'pointer' }}>
           <h1 style={{ margin: 0, fontSize: '28px', color: '#2C3E50', fontWeight: '800' }}>アシストねっと協同組合</h1>
-          <p style={{ margin: '5px 0 0 0', color: '#95A5A6', fontWeight: '600' }}>実習生管理・アラートシステム</p>
+          <p style={{ margin: '5px 0 0 0', color: '#95A5A6', fontWeight: '600', letterSpacing: '1px' }}>技能実習生 総合管理システム</p>
         </div>
 
         <div style={{ display: 'flex', gap: '15px' }}>
@@ -113,39 +150,69 @@ export default function Home() {
           {companies.map(c => (
             <div key={c.id} onClick={() => { setTargetCoId(c.id); setView('detail'); setSelectedTrId(c.trainees?.[0]?.id || null); }} style={cardStyle}>
               <h3 style={{ margin: '0 0 15px 0', fontSize: '22px', color: '#2C3E50' }}>{c.companyName}</h3>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '15px 0', borderTop: '1px solid #eee' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '15px 0', borderTop: '1px solid #f1f1f1', alignItems: 'center' }}>
                 <span style={{ color: '#7F8C8D', fontWeight: 'bold' }}>受入中実習生</span>
-                <span style={{ fontSize: '22px', fontWeight: '900', color: '#F57C00' }}>{c.trainees?.length || 0} <small style={{ fontSize: '14px' }}>名</small></span>
+                <span style={{ fontSize: '24px', fontWeight: '900', color: '#F57C00' }}>{c.trainees?.length || 0} <small style={{ fontSize: '14px', color: '#7F8C8D' }}>名</small></span>
               </div>
+              <div style={{ fontSize: '12px', color: '#BDC3C7', textAlign: 'right', marginTop: '10px' }}>詳細を見る →</div>
             </div>
           ))}
         </div>
       ) : (
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <button onClick={() => setView('list')} style={{ marginBottom: '25px', background: 'none', border: 'none', color: '#F57C00', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}>← 会社一覧に戻る</button>
+        <div style={{ maxWidth: '1240px', margin: '0 auto' }}>
+          <button onClick={() => setView('list')} style={{ marginBottom: '25px', background: 'none', border: 'none', color: '#F57C00', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span>←</span> 会社一覧に戻る
+          </button>
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-            <h2 style={{ margin: 0, fontSize: '24px' }}>{currentCompany?.companyName}</h2>
-            <button onClick={() => { setIsEditing(false); setTrFormData({ category: '技能実習1号' }); setShowTrForm(true); }} style={btnPrimary}>＋ 実習生を個別追加</button>
+            <h2 style={{ margin: 0, fontSize: '26px', color: '#2C3E50' }}>{currentCompany?.companyName}</h2>
+            <button onClick={() => { setIsEditing(false); setTrFormData({ category: '技能実習1号', status: '実習中', batch: '①' }); setShowTrForm(true); }} style={btnPrimary}>＋ 実習生を個別追加</button>
           </div>
 
           {currentCompany && (
             <TraineeDetail 
-              company={currentCompany} selectedTrId={selectedTrId} onSelectTrainee={setSelectedTrId}
-              activeTab={activeTab} setActiveTab={setActiveTab}
-              onEdit={(data, idx) => { setIsEditing(true); setTrFormData(data); setEditIdx(idx); setShowTrForm(true); }}
+              company={currentCompany} 
+              selectedTrId={selectedTrId} 
+              onSelectTrainee={setSelectedTrId}
+              activeTab={activeTab} 
+              setActiveTab={setActiveTab}
+              onEdit={(data, idx) => { 
+                setIsEditing(true); 
+                setTrFormData(data); 
+                setEditIdx(idx); 
+                setShowTrForm(true); 
+              }}
             />
           )}
         </div>
       )}
 
-      {showCoForm && <CompanyForm formData={coFormData} setFormData={setCoFormData} onSave={async () => { /* 保存処理 */ setShowCoForm(false); fetchCompanies(); }} onClose={() => setShowCoForm(false)} />}
-      {showTrForm && <TraineeForm formData={trFormData} setFormData={setTrFormData} onSave={async () => { /* 実習生保存処理 */ setShowTrForm(false); fetchCompanies(); }} onClose={() => setShowTrForm(false)} isEditing={isEditing} editIdx={editIdx} />}
+      {/* モーダルフォーム類 */}
+      {showCoForm && (
+        <CompanyForm 
+          formData={coFormData} 
+          setFormData={setCoFormData} 
+          onSave={async () => { setShowCoForm(false); fetchCompanies(); }} 
+          onClose={() => setShowCoForm(false)} 
+        />
+      )}
+      
+      {showTrForm && (
+        <TraineeForm 
+          formData={trFormData} 
+          setFormData={setTrFormData} 
+          onSave={async () => { setShowTrForm(false); fetchCompanies(); }} 
+          onClose={() => setShowTrForm(false)} 
+          isEditing={isEditing} 
+          editIdx={editIdx} 
+        />
+      )}
     </main>
   );
 }
 
-const btnPrimary = { background: '#F57C00', color: '#fff', border: 'none', padding: '15px 30px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 6px 20px rgba(245, 124, 0, 0.3)' };
+// スタイル定義（page.tsx専用）
+const btnPrimary = { background: '#F57C00', color: '#fff', border: 'none', padding: '15px 30px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 6px 20px rgba(245, 124, 0, 0.3)', transition: '0.2s' };
 const btnSecondary = { background: '#fff', border: '1px solid #ced4da', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', color: '#444' };
 const btnCSV = { background: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' };
 const cardStyle = { padding: '35px', background: '#fff', borderRadius: '20px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', border: '1px solid #eee', cursor: 'pointer', transition: '0.3s' };
