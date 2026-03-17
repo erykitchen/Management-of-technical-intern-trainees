@@ -284,54 +284,71 @@ export default function Home() {
 
   const totalActiveTrainees = companies.reduce((sum, c) => sum + (c.trainees || []).filter((t: any) => t.category !== "実習終了").length, 0);
 
-  // --- 印刷プレビュー表示 (isPreview === true の時) ---
-  if ((view === 'print_tr' || view === 'print_co') && isPreview) {
-    const selectedCompany = companies.find(c => c.id === printCoId);
-    const selectedTrainees = selectedCompany?.trainees.filter((t: any) => printTrIds.includes(t.id)) || [];
-    const fields = view === 'print_tr' ? labelMapTr : labelMapCo;
-    
-    return (
-      <div className="print-area" style={{ padding: '40px', backgroundColor: '#fff', minHeight: '100vh' }}>
-        <style>{`@media print { .no-print { display: none !important; } body { background: #fff; } }`}</style>
-        <div className="no-print" style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
-          <button onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.gray, color: '#fff' }}>設定に戻る</button>
-          <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷を実行</button>
-        </div>
-        
-        {view === 'print_tr' ? (
-          selectedTrainees.map((t: any) => (
-            <div key={t.id} style={{ marginBottom: '40px', pageBreakAfter: 'always', border: '2px solid #000', padding: '30px' }}>
-              <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '10px', fontSize: '20px' }}>実習生情報シート ({selectedCompany?.companyName})</h2>
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
-                <tbody>
-                  {printFields.map(key => (
-                    <tr key={key}>
-                      <td style={{ border: '1px solid #000', padding: '10px', width: '30%', backgroundColor: '#f2f2f2', fontWeight: 'bold' }}>{labelMapTr[key]}</td>
-                      <td style={{ border: '1px solid #000', padding: '10px' }}>{t[key] || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))
-        ) : (
-          <div style={{ border: '2px solid #000', padding: '30px' }}>
-            <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '10px', fontSize: '20px' }}>実習実施者（受入企業）情報詳細</h2>
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+ // --- 印刷プレビュー表示 (isPreview === true の時) ---
+if ((view === 'print_tr' || view === 'print_co') && isPreview) {
+  const selectedCompany = companies.find(c => c.id === printCoId);
+  const selectedTrainees = selectedCompany?.trainees.filter((t: any) => printTrIds.includes(t.id)) || [];
+  
+  return (
+    <div className="print-area" style={{ padding: '0', backgroundColor: '#fff', minHeight: '100vh' }}>
+      <style>{`
+        @media print { 
+          .no-print { display: none !important; } 
+          body { background: #fff; margin: 0; }
+          .page-break { page-break-after: always; }
+        }
+        table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+        th, td { border: 1px solid #000; padding: 6px 10px; font-size: 12px; text-align: left; word-break: break-all; }
+        th { background-color: #f2f2f2; width: 35%; }
+      `}</style>
+      
+      <div className="no-print" style={{ padding: '20px', display: 'flex', gap: '10px', background: '#eee', borderBottom: '1px solid #ccc' }}>
+        <button onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.gray, color: '#fff' }}>設定に戻る</button>
+        <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷を実行</button>
+      </div>
+      
+      {view === 'print_tr' ? (
+        selectedTrainees.map((t: any, index: number) => (
+          <div key={t.id} className="page-break" style={{ padding: '40px', maxWidth: '800px', margin: '0 auto' }}>
+            <h2 style={{ fontSize: '18px', marginBottom: '15px', textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '5px' }}>
+              実習生個別情報シート
+            </h2>
+            <div style={{ marginBottom: '10px', textAlign: 'right', fontSize: '12px' }}>所属企業: {selectedCompany?.companyName}</div>
+            <table>
               <tbody>
                 {printFields.map(key => (
                   <tr key={key}>
-                    <td style={{ border: '1px solid #000', padding: '10px', width: '30%', backgroundColor: '#f2f2f2', fontWeight: 'bold' }}>{labelMapCo[key]}</td>
-                    <td style={{ border: '1px solid #000', padding: '10px' }}>{selectedCompany?.[key] || '-'}</td>
+                    <th>{labelMapTr[key]}</th>
+                    <td>{t[key] || '-'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        )}
-      </div>
-    );
-  }
+        ))
+      ) : (
+        <div style={{ padding: '40px', maxWidth: '800px', margin: '0 auto' }}>
+          <h2 style={{ fontSize: '18px', marginBottom: '15px', textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '5px' }}>
+            実習実施者（受入企業）情報詳細
+          </h2>
+          <table>
+            <tbody>
+              {printFields.map(key => (
+                <tr key={key}>
+                  <th>{labelMapCo[key]}</th>
+                  <td>{selectedCompany?.[key] || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ marginTop: '20px', fontSize: '12px' }}>
+            作成日: {new Date().toLocaleDateString('ja-JP')}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
   // --- 印刷設定画面 (!isPreview の時) ---
   if ((view === 'print_tr' || view === 'print_co') && !isPreview) {
