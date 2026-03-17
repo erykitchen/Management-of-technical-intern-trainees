@@ -1,168 +1,257 @@
 "use client";
-
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { db } from './firebase';
-import { collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+
+// 分割したファイルからのインポート
 import { 
-  labelMapCo, labelMapTr, batchColorMap, initialCompanyForm, initialTraineeForm, 
-  categoryOptions, batchOptions 
+  labelMapCo, labelMapTr, categoryOptions, batchOptions, 
+  batchColorMap, initialCompanyForm, initialTraineeForm 
 } from './lib/constants';
-import { checkAlert } from './lib/utils';
+import { convertToAD, checkAlert } from './lib/utils';
 import { CoFormModal, TrFormModal } from './components/Modals';
 
-// --- スタイル・基本設定 ---
-const colors = {
-  main: '#E6EEF6', accent: '#344EAD', text: '#333', gray: '#888',
-  lightGray: '#F2F2F2', border: '#E0E0E0', white: '#FFF', danger: '#D32F2F'
-};
-const btnBase: React.CSSProperties = {
-  padding: '8px 18px', borderRadius: '4px', border: 'none', cursor: 'pointer',
-  fontWeight: 'bold', fontSize: '13px', transition: '0.2s', display: 'flex', alignItems: 'center', gap: '5px'
-};
-const grayCBtn: React.CSSProperties = {
-  marginLeft: '8px', padding: '2px 6px', fontSize: '10px', backgroundColor: '#EEE',
-  border: '1px solid #CCC', borderRadius: '3px', cursor: 'pointer', color: '#666'
-};
-const sharpRadius = '2px';
-
 export default function Home() {
-  // --- States ---
-  const [companies, setCompanies] = useState<any[]>([]);
   const [view, setView] = useState<'list' | 'detail' | 'print_tr' | 'print_co'>('list');
-  const [currentCo, setCurrentCo] = useState<any>(null);
-  const [selectedTrId, setSelectedTrId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'current' | number>('current');
-  const [filterBatch, setFilterBatch] = useState('すべて');
-
-  // Modals
-  const [showCoForm, setShowCoForm] = useState(false);
   const [showTrForm, setShowTrForm] = useState(false);
-  const [isEditingCo, setIsEditingCo] = useState(false);
+  const [showCoForm, setShowCoForm] = useState(false);
   const [isEditingTr, setIsEditingTr] = useState(false);
+  const [isEditingCo, setIsEditingCo] = useState(false);
   const [editingPhaseIdx, setEditingPhaseIdx] = useState<number | null>(null);
-  const [coFormData, setCoFormData] = useState<any>(initialCompanyForm);
+  const [currentCo, setCurrentCo] = useState<any>(null);
+  const [selectedTrId, setSelectedTrId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'current' | number>('current');
+  const [companies, setCompanies] = useState<any[]>([]);
   const [trFormData, setTrFormData] = useState<any>(initialTraineeForm);
+  const [coFormData, setCoFormData] = useState<any>(initialCompanyForm);
+  const [filterBatch, setFilterBatch] = useState<string>('すべて');
 
-  // Print
+  const [printCoId, setPrintCoId] = useState("");
+  const [printTrIds, setPrintTrIds] = useState<number[]>([]);
   const [printFields, setPrintFields] = useState<string[]>([]);
   const [isPreview, setIsPreview] = useState(false);
 
-  // --- Firestore Realtime Sync ---
-  useEffect(() => {
-    return onSnapshot(collection(db, "companies"), (snapshot) => {
-      setCompanies(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-  }, []);
+  const colors = { main: '#FFF9F0', accent: '#F57C00', text: '#2C3E50', gray: '#95A5A6', lightGray: '#F2F2F2', border: '#E0E0E0', white: '#FFFFFF', danger: '#E74C3C' };
+  const sharpRadius = '4px';
+  const btnBase = { padding: '10px 18px', borderRadius: sharpRadius, border: 'none', cursor: 'pointer', fontWeight: '600' as const, fontSize: '13px' };
+  const grayCBtn = { width: '20px', height: '20px', fontSize: '9px', cursor: 'pointer', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: '3px', color: colors.gray, marginLeft: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 
-  useEffect(() => {
+  const fetchCompanies = async () => {
+    const q = query(collection(db, "companies"), orderBy("createdAt", "desc"));
+    const querySnapshot = await getDocs(q);
+    const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    setCompanies(data);
     if (currentCo) {
-      const updated = companies.find(c => c.id === currentCo.id);
+      const updated = data.find(c => c.id === currentCo.id);
       if (updated) setCurrentCo(updated);
     }
-  }, [companies]);
+  };
 
-  // --- Handlers ---
-  const copy = (txt: string) => { if (txt) { navigator.clipboard.writeText(txt); alert("コピーしました"); } };
+  useEffect(() => { fetchCompanies(); }, []);
+  const copy = (text: string) => { if (text) navigator.clipboard.writeText(text); };
 
   const handleSaveCompany = async () => {
+    if (!coFormData.companyName) { alert("会社名は必須です"); return; }
+    const cleanedData = { ...coFormData };
+    Object.keys(cleanedData).forEach(key => {
+      if (typeof cleanedData[key] === 'string' && key !== 'memo') cleanedData[key] = convertToAD(cleanedData[key]);
+    });
     try {
-      if (isEditingCo) {
-        await updateDoc(doc(db, "companies", coFormData.id), coFormData);
+      if (isEditingCo && currentCo?.id) {
+        await updateDoc(doc(db, "companies", currentCo.id), cleanedData);
       } else {
-        await addDoc(collection(db, "companies"), { ...coFormData, trainees: [] });
+        await addDoc(collection(db, "companies"), { ...cleanedData, trainees: [], createdAt: serverTimestamp() });
       }
       setShowCoForm(false);
-      setCoFormData(initialCompanyForm);
-    } catch (e) { alert("エラーが発生しました"); }
+      fetchCompanies();
+    } catch (e) { alert("保存エラー"); }
   };
 
   const handleDeleteCompany = async () => {
-    if (confirm("この会社と所属する実習生データをすべて削除しますか？")) {
+    if (!currentCo?.id) return;
+    if (!confirm(`会社「${currentCo.companyName}」を削除しますか？`)) return;
+    if (!confirm(`本当によろしいですか？所属する実習生もすべて削除されます。この操作は取り消せません。`)) return;
+    try {
       await deleteDoc(doc(db, "companies", currentCo.id));
       setView('list');
-    }
-  };
-
-  const handleSaveTrainee = async () => {
-    const targetId = trFormData.targetCompanyId || currentCo?.id;
-    if (!targetId) return alert("会社を選択してください");
-    const targetComp = companies.find(c => c.id === targetId);
-    if (!targetComp) return;
-
-    let newTrainees = [...(targetComp.trainees || [])];
-    if (isEditingTr) {
-      const idx = newTrainees.findIndex(t => t.id === trFormData.id);
-      if (editingPhaseIdx !== null) {
-        newTrainees[idx].phaseHistory[editingPhaseIdx] = { ...trFormData };
-      } else {
-        newTrainees[idx] = { ...trFormData };
-      }
-    } else {
-      newTrainees.push({ ...trFormData, id: Date.now().toString() });
-    }
-
-    await updateDoc(doc(db, "companies", targetId), { trainees: newTrainees });
-    setShowTrForm(false);
-    setTrFormData(initialTraineeForm);
+      setCurrentCo(null);
+      fetchCompanies();
+    } catch (e) { alert("削除エラー"); }
   };
 
   const handleDeleteTrainee = async () => {
-    if (confirm("この実習生を削除しますか？")) {
-      const newTrainees = currentCo.trainees.filter((t: any) => t.id !== selectedTrId);
-      await updateDoc(doc(db, "companies", currentCo.id), { trainees: newTrainees });
+    if (!selectedTrId || !currentCo?.id) return;
+    if (!confirm("この実習生の情報を完全に削除しますか？")) return;
+    try {
+      const updatedTrainees = currentCo.trainees.filter((t: any) => t.id !== selectedTrId);
+      await updateDoc(doc(db, "companies", currentCo.id), { trainees: updatedTrainees });
       setSelectedTrId(null);
-    }
+      fetchCompanies();
+    } catch (e) { alert("削除エラー"); }
   };
 
-  const handleUndoPhaseChange = async (trId: string) => {
-    if (!confirm("最新の区分変更を取り消し、履歴の最後を現役に復元しますか？")) return;
-    const newTrainees = currentCo.trainees.map((t: any) => {
-      if (t.id === trId && t.phaseHistory?.length > 0) {
-        const history = [...t.phaseHistory];
-        const last = history.pop();
-        return { ...last, phaseHistory: history };
-      }
-      return t;
+  const handleSaveTrainee = async () => {
+    const targetId = isEditingTr ? (trFormData.targetCompanyId || currentCo.id) : trFormData.targetCompanyId;
+    if (!targetId) { alert("会社を選択してください"); return; }
+    const cleanedData = { ...trFormData };
+    Object.keys(cleanedData).forEach(key => {
+      if (typeof cleanedData[key] === 'string' && key !== 'memo') cleanedData[key] = convertToAD(cleanedData[key]);
     });
-    await updateDoc(doc(db, "companies", currentCo.id), { trainees: newTrainees });
+    try {
+      const targetCo = companies.find(c => c.id === targetId);
+      let updatedTrainees = [...(targetCo.trainees || [])];
+      if (isEditingTr && trFormData.id) {
+        updatedTrainees = updatedTrainees.map((t: any) => {
+          if (t.id === trFormData.id) {
+            if (editingPhaseIdx !== null) {
+              const newHistory = [...(t.phaseHistory || [])];
+              newHistory[editingPhaseIdx] = { ...cleanedData };
+              return { ...t, phaseHistory: newHistory };
+            }
+            return cleanedData;
+          }
+          return t;
+        });
+      } else {
+        const { targetCompanyId, ...saveData } = cleanedData;
+        updatedTrainees = [...updatedTrainees, { ...saveData, id: Date.now(), phaseHistory: [] }];
+      }
+      await updateDoc(doc(db, "companies", targetId), { trainees: updatedTrainees });
+      setShowTrForm(false);
+      fetchCompanies();
+    } catch (e) { alert("保存エラー"); }
   };
 
-  // --- Render Helpers ---
-  if (isPreview) {
-    const dataList = view === 'print_tr' ? (currentCo.trainees || []) : [currentCo];
-    const labels = view === 'print_tr' ? labelMapTr : labelMapCo;
+  const handleUndoPhaseChange = async (traineeId: number) => {
+    const trainee = currentCo.trainees.find((t: any) => t.id === traineeId);
+    if (!trainee || !trainee.phaseHistory || trainee.phaseHistory.length === 0) return;
+    if (!confirm("直前の区分変更を取り消し、一つ前の状態に戻しますか？")) return;
+    try {
+      const newHistory = [...trainee.phaseHistory];
+      const previousData = newHistory.pop();
+      const updatedTrainees = currentCo.trainees.map((t: any) => {
+        if (t.id === traineeId) return { ...previousData, phaseHistory: newHistory, id: t.id };
+        return t;
+      });
+      await updateDoc(doc(db, "companies", currentCo.id), { trainees: updatedTrainees });
+      setActiveTab('current');
+      fetchCompanies();
+    } catch (e) { alert("取り消し失敗"); }
+  };
+
+  const totalActiveTrainees = companies.reduce((sum, c) => 
+    sum + (c.trainees || []).filter((t: any) => t.category !== "実習終了").length, 0
+  );
+
+  if (view === 'print_tr' && isPreview) {
+    const selectedCompany = companies.find(c => c.id === printCoId);
+    const selectedTrainees = selectedCompany?.trainees.filter((t: any) => printTrIds.includes(t.id)) || [];
     return (
-      <div style={{ padding: '40px', backgroundColor: '#fff' }}>
-        <button className="no-print" onClick={() => setIsPreview(false)} style={{ marginBottom: '20px', padding: '10px' }}>戻る</button>
-        {dataList.map((item: any, i: number) => (
-          <div key={i} style={{ marginBottom: '50px', pageBreakAfter: 'always' }}>
-            <h2 style={{ borderBottom: '2px solid #333', paddingBottom: '5px', marginBottom: '20px' }}>
-              {view === 'print_tr' ? `実習生情報: ${item.traineeName}` : `会社情報: ${item.companyName}`}
-            </h2>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div className="print-area" style={{ padding: '20px', backgroundColor: '#fff' }}>
+        <style>{`@media print { .no-print { display: none !important; } body { background: #fff; } }`}</style>
+        <button className="no-print" onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', marginBottom: '20px' }}>設定に戻る</button>
+        {selectedTrainees.map((t: any) => (
+          <div key={t.id} style={{ marginBottom: '40px', pageBreakAfter: 'always', border: '1px solid #000', padding: '20px' }}>
+            <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '10px' }}>実習生情報シート ({selectedCompany?.companyName})</h2>
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
               <tbody>
-                {printFields.map(f => (
-                  <tr key={f}>
-                    <td style={{ border: '1px solid #ccc', padding: '8px', backgroundColor: '#f5f5f5', width: '30%', fontSize: '12px' }}>{labels[f]}</td>
-                    <td style={{ border: '1px solid #ccc', padding: '8px', fontSize: '13px' }}>{item[f] || '-'}</td>
+                {printFields.map(key => (
+                  <tr key={key}>
+                    <td style={{ border: '1px solid #000', padding: '8px', width: '30%', backgroundColor: '#f2f2f2', fontWeight: 'bold' }}>{labelMapTr[key]}</td>
+                    <td style={{ border: '1px solid #000', padding: '8px' }}>{t[key] || '-'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ))}
-        <style>{`@media print { .no-print { display: none; } }`}</style>
       </div>
     );
   }
 
-  if (view === 'list') {
+  if (view === 'print_co' && isPreview) {
+    const selectedCompany = companies.find(c => c.id === printCoId);
     return (
-      <main style={{ padding: '40px', maxWidth: '1200px', margin: '0 auto' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', color: colors.accent, letterSpacing: '-0.5px' }}>Management Portal</h1>
-          <button onClick={() => { setIsEditingCo(false); setCoFormData(initialCompanyForm); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', padding: '12px 24px' }}>＋ 新規実施者(会社)登録</button>
+      <div className="print-area" style={{ padding: '20px', backgroundColor: '#fff' }}>
+        <style>{`@media print { .no-print { display: none !important; } body { background: #fff; } }`}</style>
+        <button className="no-print" onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', marginBottom: '20px' }}>設定に戻る</button>
+        <div style={{ border: '1px solid #000', padding: '20px' }}>
+          <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '10px' }}>実習実施者（受入企業）情報詳細</h2>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+            <tbody>
+              {printFields.map(key => (
+                <tr key={key}>
+                  <td style={{ border: '1px solid #000', padding: '8px', width: '30%', backgroundColor: '#f2f2f2', fontWeight: 'bold' }}>{labelMapCo[key]}</td>
+                  <td style={{ border: '1px solid #000', padding: '8px' }}>{selectedCompany?.[key] || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'list' || view === 'print_tr' || view === 'print_co') {
+    return (
+      <main style={{ padding: '40px', backgroundColor: '#F9F9F9', minHeight: '100vh', color: colors.text }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px', alignItems: 'flex-end' }}>
+          <div>
+            <h1 style={{ fontSize: '24px', fontWeight: '800', letterSpacing: '0.05em' }}>アシストねっと協同組合</h1>
+            <p style={{ fontSize: '12px', color: colors.gray, marginTop: '4px' }}>技能実習生管理システム</p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '12px', color: colors.gray, marginBottom: '5px' }}>組合全体受入人数</div>
+            <div style={{ fontSize: '24px', fontWeight: '800', color: colors.accent }}>{totalActiveTrainees} <span style={{ fontSize: '14px', color: colors.text }}>名</span></div>
+          </div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button onClick={() => { setPrintFields([]); setPrintTrIds([]); setPrintCoId(""); setIsPreview(false); setView('print_tr'); }} style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}`, color: colors.text }}>実習生情報の印刷</button>
+            <button onClick={() => { setPrintFields([]); setPrintCoId(""); setIsPreview(false); setView('print_co'); }} style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}`, color: colors.text }}>会社情報の印刷</button>
+            <button onClick={() => { setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習生</button>
+            <button onClick={() => { setIsEditingCo(false); setCoFormData(initialCompanyForm); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実施者</button>
+          </div>
         </header>
+
+        {(view === 'print_tr' || view === 'print_co') && (
+          <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '4px', border: `2px solid ${colors.accent}`, marginBottom: '30px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{view === 'print_tr' ? '実習生 印刷設定' : '会社 印刷設定'}</h3>
+              <button onClick={() => setView('list')} style={{ ...btnBase, backgroundColor: colors.lightGray }}>✕ 閉じる</button>
+            </div>
+            
+            <label style={{ fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>対象の会社を選択：</label>
+            <select style={{ width: '100%', padding: '12px', marginBottom: '20px', borderRadius: '4px', border: '1px solid #ccc' }} value={printCoId} onChange={(e) => { setPrintCoId(e.target.value); setPrintTrIds([]); }}>
+              <option value="">対象の会社を選択してください</option>
+              {companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+            </select>
+
+            {view === 'print_tr' && printCoId && (
+              <div style={{ marginBottom: '20px' }}>
+                <p style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '10px' }}>印刷する実習生を選択：</p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {companies.find(c => c.id === printCoId)?.trainees.map((t: any) => (
+                    <button key={t.id} onClick={() => setPrintTrIds(prev => prev.includes(t.id) ? prev.filter(id => id !== t.id) : [...prev, t.id])} style={{ ...btnBase, backgroundColor: printTrIds.includes(t.id) ? colors.accent : colors.lightGray, color: printTrIds.includes(t.id) ? '#fff' : colors.text }}>{t.traineeName}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(printCoId && (view === 'print_co' || printTrIds.length > 0)) && (
+              <div>
+                <p style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '10px' }}>出力項目を選択：</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', padding: '15px', backgroundColor: '#f9f9f9', borderRadius: '4px', marginBottom: '20px' }}>
+                  {Object.keys(view === 'print_tr' ? labelMapTr : labelMapCo).map(key => (
+                    <label key={key} style={{ fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <input type="checkbox" checked={printFields.includes(key)} onChange={() => setPrintFields(prev => prev.includes(key) ? prev.filter(f => f !== key) : [...prev, key])} />
+                      {(view === 'print_tr' ? labelMapTr : labelMapCo)[key]}
+                    </label>
+                  ))}
+                </div>
+                <button onClick={() => { setIsPreview(true); setTimeout(() => window.print(), 500); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', width: '200px', fontSize: '15px' }}>プレビュー・印刷</button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '25px' }}>
           {companies.map(c => {
@@ -182,6 +271,7 @@ export default function Home() {
           })}
         </div>
         {showCoForm && <CoFormModal coFormData={coFormData} setCoFormData={setCoFormData} handleSaveCompany={handleSaveCompany} setShowCoForm={setShowCoForm} colors={colors} btnBase={btnBase} isEditing={isEditingCo} />}
+        {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} colors={colors} btnBase={btnBase} isEditingTr={isEditingTr} companies={companies} editingPhaseIdx={editingPhaseIdx} currentCoId={currentCo?.id} />}
       </main>
     );
   }
