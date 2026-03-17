@@ -1,3 +1,4 @@
+// --- ラベル・選択肢・初期値定義 ---
 export const labelMapCo: { [key: string]: string } = {
   companyName: "会社名", settlement: "決算時期", representative: "代表者氏名", jobType: "職種（小分類）",
   zipCode: "郵便番号", address: "住所", tel: "TEL", joinedDate: "組合加入年月日",
@@ -27,8 +28,6 @@ export const nationalityOptions = ["ベトナム", "中国", "インドネシア
 export const statusOptions = ["選択する", "認定申請準備中", "認定手続中", "ビザ申請中", "入国待機", "実習中", "一時帰国中", "その他"];
 export const acceptanceOptions = ["選択する", "受入中", "無し"];
 export const genderOptions = ["男", "女"];
-
-// --- ここに export が漏れていた可能性があります ---
 export const keysToClearOnNewPhase = ["status", "stayLimit", "cardNumber", "certificateNumber", "applyDate", "certDate", "entryDate", "endDate", "renewStartDate"];
 
 export const batchColorMap: { [key: string]: string } = {
