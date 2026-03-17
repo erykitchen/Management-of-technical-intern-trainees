@@ -1,6 +1,6 @@
 export interface Trainee {
   id: number;
-  targetCompanyId: string; // ← これを追加しました
+  targetCompanyId?: string; // ← ここに「?」付きで追加
   batch: string;
   status: string;
   traineeName: string;
