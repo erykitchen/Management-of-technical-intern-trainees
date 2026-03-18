@@ -122,6 +122,8 @@ const calculateDates = (entryDateStr: string) => {
 
 // --- 3. メインコンポーネント ---
 export default function Home() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
   const [view, setView] = useState<'list' | 'detail' | 'print_tr' | 'print_co'>('list');
   const [showTrForm, setShowTrForm] = useState(false);
   const [showTrMethodModal, setShowTrMethodModal] = useState(false);
@@ -284,7 +286,32 @@ export default function Home() {
   };
 
   const totalActiveTrainees = companies.reduce((sum, c) => sum + (c.trainees || []).filter((t: any) => t.category !== "実習終了").length, 0);
-
+// ↓↓↓ ここから差し込み ↓↓↓
+  if (!isLoggedIn) {
+    return (
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: '#F9F9F9', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+        <div style={{ padding: '40px', background: '#fff', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', textAlign: 'center' }}>
+          <h2 style={{ marginBottom: '20px', fontSize: '18px', color: '#2C3E50' }}>パスワードを入力してください</h2>
+          <input
+            type="password"
+            value={passwordInput}
+            onChange={(e) => setPasswordInput(e.target.value)}
+            style={{ padding: '10px', width: '200px', borderRadius: '4px', border: '1px solid #ddd', marginBottom: '20px', textAlign: 'center', fontSize: '18px', color: '#000' }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && passwordInput === '4647') setIsLoggedIn(true); }}
+          />
+          <br />
+          <button 
+            onClick={() => { if (passwordInput === '4647') setIsLoggedIn(true); else alert("パスワードが違います"); }}
+            style={{ padding: '10px 30px', backgroundColor: '#F57C00', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            ログイン
+          </button>
+        </div>
+      </div>
+    );
+  }
+  // ↑↑↑ ここまで差し込み ↑↑↑
+  
   // --- 4. 印刷プレビュー画面 ---
   if ((view === 'print_tr' || view === 'print_co') && isPreview) {
     const selectedCompany = companies.find(c => c.id === printCoId);
@@ -548,7 +575,6 @@ export default function Home() {
         <div style={{ display: 'flex', gap: '10px' }}>
           {!selectedTrId ? (
             <>
-              <button onClick={() => setShowTrMethodModal(true)} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 実習生追加</button>
               <button onClick={() => { setIsEditingCo(true); setCoFormData(currentCo); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>会社編集</button>
               <button onClick={handleDeleteCompany} style={{ ...btnBase, backgroundColor: '#FFF', border: `1px solid ${colors.danger}`, color: colors.danger }}>会社削除</button>
             </>

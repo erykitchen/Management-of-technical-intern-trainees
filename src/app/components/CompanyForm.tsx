@@ -1,5 +1,5 @@
 "use client";
-import { Company } from '../types';
+import { Company } from '../types/index';
 
 interface Props {
   formData: any;
