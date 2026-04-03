@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage"; // 追加
 
 const firebaseConfig = {
   apiKey: "AIzaSyCStzExuiWL4TQDtkLI7nMefzrQapWG3cs",
@@ -13,3 +14,4 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+export const storage = getStorage(app); // 追加：これで「倉庫」が使えるようになります
