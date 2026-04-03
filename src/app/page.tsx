@@ -197,7 +197,6 @@ export default function Home() {
   useEffect(() => { fetchCompanies(); fetchTodos(); }, []);
   const copy = (text: string) => { if (text) navigator.clipboard.writeText(text); };
 
-  // 計算ロジック復旧
   const totalActiveTrainees = companies.reduce((sum, c) => sum + (c.trainees || []).filter((t: any) => t.category !== "実習終了").length, 0);
   const activeCompanyCount = companies.filter(c => (c.trainees || []).some((t: any) => t.category !== "実習終了")).length;
 
@@ -403,7 +402,7 @@ export default function Home() {
     );
   }
 
-  // --- 印刷設定画面（完全復旧版） ---
+  // --- 印刷設定画面 ---
   if ((view === 'print_tr' || view === 'print_co') && !isPreview) {
     const selectedCompany = companies.find(c => c.id === printCoId);
     const labels = view === 'print_tr' ? labelMapTr : labelMapCo;
@@ -504,7 +503,6 @@ export default function Home() {
         </header>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '40px' }}>
-          {/* 左：期限注意リスト */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: `1px solid ${colors.border}`, maxHeight: '400px', overflowY: 'auto' }}>
             <h3 style={{ fontSize: '16px', marginBottom: '15px' }}>⚠️ 期限注意リスト</h3>
             {alertList.length === 0 ? <p style={{ fontSize: '13px', color: colors.gray }}>注意対象はいません。</p> : (
@@ -520,7 +518,6 @@ export default function Home() {
               </table>
             )}
           </div>
-          {/* 右：TODOリスト */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: `1px solid ${colors.border}`, maxHeight: '400px', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <h3 style={{ fontSize: '16px' }}>📝 TODOリスト</h3>
@@ -563,7 +560,6 @@ export default function Home() {
           })}
         </div>
 
-        {/* TODOモーダル（進化版） */}
         {showTodoForm && (
           <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', width: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -612,12 +608,11 @@ export default function Home() {
           </div>
         )}
         
-        {/* モーダル類 */}
         {showTrMethodModal && (<div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}><div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', textAlign: 'center' }}><h3>登録方法選択</h3><div style={{ display: 'flex', gap: '15px', marginTop: '20px' }}><button onClick={() => { setShowTrMethodModal(false); setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>手入力</button><button onClick={() => { setShowTrMethodModal(false); setShowCsvModal(true); }} style={{ ...btnBase, backgroundColor: '#27ae60', color: '#fff' }}>CSV</button><button onClick={() => setShowTrMethodModal(false)} style={{ ...btnBase, backgroundColor: colors.lightGray }}>中止</button></div></div></div>)}
         {showCoMethodModal && (<div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}><div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', textAlign: 'center' }}><h3>登録方法選択</h3><div style={{ display: 'flex', gap: '15px', marginTop: '20px' }}><button onClick={() => { setShowCoMethodModal(false); setCoFormData(initialCompanyForm); setIsEditingCo(false); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>手入力</button><button onClick={() => { setShowCoMethodModal(false); setShowCoCsvModal(true); }} style={{ ...btnBase, backgroundColor: '#27ae60', color: '#fff' }}>CSV</button><button onClick={() => setShowCoMethodModal(false)} style={{ ...btnBase, backgroundColor: colors.lightGray }}>中止</button></div></div></div>)}
         {showCsvModal && (<div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}><div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', width: '400px' }}><h3>実習生CSV</h3><select id="csvCompany" style={{ width: '100%', padding: '8px', marginBottom: '15px' }}><option value="">会社選択</option>{companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}</select><input type="file" accept=".csv" onChange={(e) => { const file = e.target.files?.[0]; const coId = (document.getElementById('csvCompany') as HTMLSelectElement).value; if (file) handleCsvImport(coId, file); }} /><button onClick={() => setShowCsvModal(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, width: '100%', marginTop: '15px' }}>閉じる</button></div></div>)}
         {showCoCsvModal && (<div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}><div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', width: '400px' }}><h3>実施者CSV</h3><input type="file" accept=".csv" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleCoCsvImport(file); }} /><button onClick={() => setShowCoCsvModal(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, width: '100%', marginTop: '15px' }}>閉じる</button></div></div>)}
-        {showCoForm && <CoFormModal coFormData={coFormData} setCoFormData={setCoFormData} handleSaveCompany={handleSaveCompany} setShowCoForm={setShowCoForm} colors={colors} btnBase={btnBase} />}
+        {showCoForm && <CoFormModal coFormData={coFormData} setCoFormData={setCoFormData} handleSaveCompany={handleSaveCompany} setShowCoForm={setShowCoForm} colors={colors} btnBase={btnBase} copy={copy} grayCBtn={grayCBtn} />}
         {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} colors={colors} btnBase={btnBase} isEditingTr={isEditingTr} companies={companies} editingPhaseIdx={editingPhaseIdx} />}
       </main>
     );
@@ -641,7 +636,19 @@ export default function Home() {
         <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', flex: 1, backgroundColor: colors.border, gap: '1px' }}>
           <aside style={{ backgroundColor: '#FFF', padding: '30px', overflowY: 'auto', maxHeight: 'calc(100vh - 65px)' }}>
             <h2 style={{ fontSize: '18px', marginBottom: '20px', borderBottom: `2px solid ${colors.main}`, paddingBottom: '10px' }}>{currentCo.companyName}</h2>
-            {Object.keys(labelMapCo).map(k => { if (k === 'memo') return null; return (<div key={k} style={{ marginBottom: '14px', fontSize: '11px' }}><span style={{ color: colors.gray, display: 'block', marginBottom: '2px' }}>{labelMapCo[k]}</span><div style={{ fontWeight: '600', fontSize: '13px' }}>{currentCo[k] || '-'}</div></div>); })}
+            {/* 会社詳細にコピーボタンを追加 */}
+            {Object.keys(labelMapCo).map(k => { 
+              if (k === 'memo') return null; 
+              return (
+                <div key={k} style={{ marginBottom: '14px', fontSize: '11px' }}>
+                  <span style={{ color: colors.gray, display: 'block', marginBottom: '2px' }}>{labelMapCo[k]}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ fontWeight: '600', fontSize: '13px' }}>{currentCo[k] || '-'}</div>
+                    <button onClick={() => copy(currentCo[k])} style={grayCBtn}>C</button>
+                  </div>
+                </div>
+              ); 
+            })}
             <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: `1px solid ${colors.border}` }}><label style={{ fontSize: '11px', color: colors.gray }}>会社メモ</label><textarea value={currentCo.memo || ''} onChange={async (e) => { const m = e.target.value; setCurrentCo({ ...currentCo, memo: m }); await updateDoc(doc(db, "companies", currentCo.id), { memo: m }); }} style={{ width: '100%', height: '100px', padding: '10px', fontSize: '12px' }} /></div>
             <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: `2px solid ${colors.main}` }}>
               <h4 style={{ fontSize: '13px', marginBottom: '10px' }}>✅ 完了したやること</h4>
@@ -690,7 +697,7 @@ export default function Home() {
             )}
           </section>
         </div>
-        {showCoForm && <CoFormModal coFormData={coFormData} setCoFormData={setCoFormData} handleSaveCompany={handleSaveCompany} setShowCoForm={setShowCoForm} colors={colors} btnBase={btnBase} />}
+        {showCoForm && <CoFormModal coFormData={coFormData} setCoFormData={setCoFormData} handleSaveCompany={handleSaveCompany} setShowCoForm={setShowCoForm} colors={colors} btnBase={btnBase} copy={copy} grayCBtn={grayCBtn} />}
         {showTrForm && <TrFormModal trFormData={trFormData} setTrFormData={setTrFormData} handleSaveTrainee={handleSaveTrainee} setShowTrForm={setShowTrForm} colors={colors} btnBase={btnBase} isEditingTr={isEditingTr} companies={companies} editingPhaseIdx={editingPhaseIdx} />}
       </main>
     );
@@ -699,10 +706,32 @@ export default function Home() {
 }
 
 // --- サブコンポーネント ---
-function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoForm, colors, btnBase }: any) {
+function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoForm, colors, btnBase, copy, grayCBtn }: any) {
   const handleChange = (k: string, v: string) => setCoFormData({ ...coFormData, [k]: v });
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}><div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: '8px', width: '90%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto' }}><h2>実施者情報入力</h2><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>{Object.keys(labelMapCo).map(k => (<div key={k} style={{ gridColumn: k === 'memo' ? 'span 2' : 'auto' }}><label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapCo[k]}</label>{k === 'memo' ? <textarea value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC', height: '100px' }} onChange={e => handleChange(k, e.target.value)} /> : <input type="text" value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC' }} onChange={e => handleChange(k, e.target.value)} />}</div>))}</div><div style={{ marginTop: '20px', textAlign: 'right' }}><button onClick={() => setShowCoForm(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, marginRight: '10px' }}>中止</button><button onClick={handleSaveCompany} style={{ ...btnBase, backgroundColor: colors.accent, color: '#FFF' }}>保存</button></div></div></div>
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: '8px', width: '90%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h2>実施者情報入力</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+          {Object.keys(labelMapCo).map(k => (
+            <div key={k} style={{ gridColumn: k === 'memo' ? 'span 2' : 'auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapCo[k]}</label>
+                {k !== 'memo' && <button onClick={() => copy(coFormData[k])} style={grayCBtn}>C</button>}
+              </div>
+              {k === 'memo' ? 
+                <textarea value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC', height: '100px' }} onChange={e => handleChange(k, e.target.value)} /> 
+                : <input type="text" value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC' }} onChange={e => handleChange(k, e.target.value)} />
+              }
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: '20px', textAlign: 'right' }}>
+          <button onClick={() => setShowCoForm(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, marginRight: '10px' }}>中止</button>
+          <button onClick={handleSaveCompany} style={{ ...btnBase, backgroundColor: colors.accent, color: '#FFF' }}>保存</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -715,6 +744,30 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
     setTrFormData(newData);
   };
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}><div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: '8px', width: '90%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto' }}><h2>実習生情報入力</h2><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>{!isEditingTr && (<div style={{ gridColumn: 'span 2' }}><label style={{ fontSize: '11px', fontWeight: 'bold' }}>配属会社</label><select style={{ width: '100%', padding: '8px', border: '1px solid #CCC' }} value={trFormData.targetCompanyId} onChange={e => handleChange('targetCompanyId', e.target.value)}><option value="">会社を選択</option>{companies.map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</select></div>)}{Object.keys(labelMapTr).map(k => (<div key={k} style={{ gridColumn: k === 'memo' ? 'span 2' : 'auto' }}><label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapTr[k]}</label>{['status', 'category', 'batch', 'gender'].includes(k) ? (<select style={{ width: '100%', padding: '8px', border: '1px solid #CCC' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>{(k === 'status' ? statusOptions : k === 'category' ? categoryOptions : k === 'batch' ? batchOptions : ["男", "女"]).map(o => <option key={o} value={o}>{o}</option>)}</select>) : k === 'memo' ? <textarea value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC', height: '100px' }} onChange={e => handleChange(k, e.target.value)} /> : <input type="text" value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC' }} onChange={e => handleChange(k, e.target.value)} />}</div>))}</div><div style={{ marginTop: '20px', textAlign: 'right' }}><button onClick={() => setShowTrForm(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, marginRight: '10px' }}>中止</button><button onClick={handleSaveTrainee} style={{ ...btnBase, backgroundColor: colors.accent, color: '#FFF' }}>保存</button></div></div></div>
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: '8px', width: '90%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h2>実習生情報入力</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+          {!isEditingTr && (<div style={{ gridColumn: 'span 2' }}><label style={{ fontSize: '11px', fontWeight: 'bold' }}>配属会社</label><select style={{ width: '100%', padding: '8px', border: '1px solid #CCC' }} value={trFormData.targetCompanyId} onChange={e => handleChange('targetCompanyId', e.target.value)}><option value="">会社を選択</option>{companies.map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</select></div>)}
+          {Object.keys(labelMapTr).map(k => (
+            <div key={k} style={{ gridColumn: k === 'memo' ? 'span 2' : 'auto' }}>
+              <label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapTr[k]}</label>
+              {['status', 'category', 'batch', 'gender'].includes(k) ? (
+                <select style={{ width: '100%', padding: '8px', border: '1px solid #CCC' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                  {(k === 'status' ? statusOptions : k === 'category' ? categoryOptions : k === 'batch' ? batchOptions : ["男", "女"]).map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : k === 'memo' ? 
+                <textarea value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC', height: '100px' }} onChange={e => handleChange(k, e.target.value)} /> 
+                : <input type="text" value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC' }} onChange={e => handleChange(k, e.target.value)} />
+              }
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: '20px', textAlign: 'right' }}>
+          <button onClick={() => setShowTrForm(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, marginRight: '10px' }}>中止</button>
+          <button onClick={handleSaveTrainee} style={{ ...btnBase, backgroundColor: colors.accent, color: '#FFF' }}>保存</button>
+        </div>
+      </div>
+    </div>
   );
 }
