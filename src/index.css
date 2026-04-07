@@ -1,0 +1,6 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* VS Code で警告が出る場合は、Tailwind CSS IntelliSense 拡張機能を入れるか、
+   設定で unknownAtRules を ignore にすることで消せますが、ビルド自体には影響しません。 */
