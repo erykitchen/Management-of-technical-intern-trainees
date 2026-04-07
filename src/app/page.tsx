@@ -41,7 +41,7 @@ const batchColorMap: { [key: string]: string } = {
 
 const initialCompanyForm = {
   ...Object.keys(labelMapCo).reduce((acc: any, key) => { acc[key] = ""; return acc; }, {}),
-  investmentCount: "1口", investmentAmount: "10口", acceptance: "選択する"
+  investmentCount: "1口", investmentAmount: "10千円", acceptance: "選択する"
 };
 
 const initialTraineeForm = {
@@ -92,6 +92,13 @@ const getRemainingDays = (dateStr: string) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+// 日数表示の整形
+const formatDays = (days: number | null) => {
+  if (days === null) return "-";
+  if (days < 0) return `${Math.abs(days)}日超過`;
+  return `あと${days}日`;
 };
 
 const getAlertStyle = (dateStr: string, fieldKey: string, category: string): any => {
@@ -221,14 +228,35 @@ export default function Home() {
     } catch (e) { alert("保存エラー"); }
   };
 
-  const handleSaveTodo = async () => {
-    if (!todoFormData.task || !todoFormData.companyId) { alert("会社名とやることは必須です"); return; }
-    const cleaned = { ...todoFormData, deadline: convertToAD(todoFormData.deadline) };
+const handleSaveTodo = async () => {
+    if (!todoFormData.task || !todoFormData.companyId) { 
+      alert("会社名とやることは必須です"); 
+      return; 
+    }
+    const cleaned = { 
+      ...todoFormData, 
+      deadline: convertToAD(todoFormData.deadline) 
+    };
     try {
-      if (isEditingTodo && selectedTodo?.id) await updateDoc(doc(db, "todos", selectedTodo.id), cleaned);
-      else await addDoc(collection(db, "todos"), { ...cleaned, createdAt: serverTimestamp(), completed: false });
-      setShowTodoForm(false); fetchTodos();
-    } catch (e) { alert("TODO保存エラー"); }
+      if (isEditingTodo && todoFormData.id) {
+        // 既存ドキュメントの更新
+        const todoId = todoFormData.id;
+        const { id, ...dataToUpdate } = cleaned;
+        await updateDoc(doc(db, "todos", todoId), dataToUpdate);
+      } else {
+        // 新規登録
+        await addDoc(collection(db, "todos"), { 
+          ...cleaned, 
+          createdAt: serverTimestamp(), 
+          completed: false 
+        });
+      }
+      setShowTodoForm(false); 
+      fetchTodos();
+    } catch (e) { 
+      console.error(e);
+      alert("TODO保存エラー"); 
+    }
   };
 
   const handleCompleteTodo = async (todo: any) => {
@@ -252,14 +280,24 @@ export default function Home() {
     } catch (e) { alert("削除エラー"); }
   };
 
-  // 保留処理
+  const handleUndoTodo = async (todo: any) => {
+    try {
+      const updatedHistory = currentCo.completedTodos.filter((t: any) => t.completedId !== todo.completedId);
+      await updateDoc(doc(db, "companies", currentCo.id), { completedTodos: updatedHistory });
+      const { completedAt, completedId, id, ...todoToRestore } = todo;
+      await addDoc(collection(db, "todos"), { ...todoToRestore, createdAt: serverTimestamp(), completed: false });
+      fetchCompanies(); fetchTodos();
+      alert("TODOをリストに戻しました");
+    } catch (e) { alert("復元エラー"); }
+  };
+
   const handleMoveToPending = async () => {
     if (!pendingMemo.trim()) { alert("保留にする理由を入力してください。"); return; }
     try {
       const company = selectedAlert.co;
       const pendingItem = {
         traineeId: selectedAlert.trainee.id,
-        field: selectedAlert.fieldKey, // どの期限か (stayLimit or examDate)
+        field: selectedAlert.fieldKey,
         deadline: selectedAlert.deadline,
         memo: pendingMemo,
         movedAt: new Date().toLocaleDateString()
@@ -394,14 +432,91 @@ export default function Home() {
     );
   }
 
-  // --- 印刷プレビュー (変更なしのため省略... 元のコードの通り) ---
+  // --- 印刷プレビュー (省略) ---
   if ((view === 'print_tr' || view === 'print_co') && isPreview) {
-    // ... 前回の回答と同じ内容 ...
+    const selectedCompany = companies.find(c => c.id === printCoId);
+    const selectedTrainees = selectedCompany?.trainees.filter((t: any) => printTrIds.includes(t.id)) || [];
+    return (
+      <div className="print-area" style={{ padding: '0', backgroundColor: '#fff', minHeight: '100vh' }}>
+        <style>{`
+          @media print { .no-print { display: none !important; } body { background: #fff; margin: 0; } .page-break { page-break-after: always; } @page { size: ${printMode === 'table' ? 'A4 landscape' : 'A4 portrait'}; margin: 10mm; } }
+          .individual-table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+          .individual-table th, .individual-table td { border: 1px solid #000; padding: 8px 12px; font-size: 13px; text-align: left; }
+          .individual-table th { background-color: #f2f2f2; width: 30%; }
+          .list-table { border-collapse: collapse; width: 100%; table-layout: auto; }
+          .list-table th, .list-table td { border: 1px solid #000; padding: 4px 6px; font-size: 10px; text-align: left; word-break: break-all; }
+          .list-table th { background-color: #f2f2f2; }
+        `}</style>
+        <div className="no-print" style={{ padding: '20px', display: 'flex', gap: '10px', background: '#eee', borderBottom: '1px solid #ccc', alignItems: 'center' }}>
+          <button onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.gray, color: '#fff' }}>設定に戻る</button>
+          <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷を実行</button>
+        </div>
+        <div style={{ padding: '40px' }}>
+          <h2 style={{ fontSize: '18px', marginBottom: '15px', textAlign: 'center', borderBottom: '2px solid #000' }}>{view === 'print_tr' ? (printMode === 'individual' ? '技能実習生管理簿' : '実習生一覧表') : '実習実施者情報詳細'}</h2>
+          {view === 'print_tr' && printMode === 'individual' ? (
+            selectedTrainees.map((t: any) => (
+              <div key={t.id} className="page-break" style={{ marginBottom: '50px' }}>
+                <div style={{ textAlign: 'right', fontSize: '12px', marginBottom: '5px' }}>所属: {selectedCompany?.companyName}</div>
+                <table className="individual-table"><tbody>{printFields.map(key => (<tr key={key}><th>{labelMapTr[key]}</th><td>{t[key] || '-'}</td></tr>))}</tbody></table>
+              </div>
+            ))
+          ) : view === 'print_tr' && printMode === 'table' ? (
+            <table className="list-table"><thead><tr>{printFields.map(key => <th key={key}>{labelMapTr[key]}</th>)}</tr></thead><tbody>{selectedTrainees.map((t: any) => (<tr key={t.id}>{printFields.map(key => <td key={key}>{t[key] || '-'}</td>)}</tr>))}</tbody></table>
+          ) : (
+            <table className="individual-table"><tbody>{printFields.map(key => (<tr key={key}><th>{labelMapCo[key]}</th><td>{selectedCompany?.[key] || '-'}</td></tr>))}</tbody></table>
+          )}
+        </div>
+      </div>
+    );
   }
 
-  // --- 印刷設定画面 (変更なしのため省略... 元のコードの通り) ---
+  // --- 印刷設定画面 ---
   if ((view === 'print_tr' || view === 'print_co') && !isPreview) {
-    // ... 前回の回答と同じ内容 ...
+    const selectedCompany = companies.find(c => c.id === printCoId);
+    const labels = view === 'print_tr' ? labelMapTr : labelMapCo;
+    return (
+      <main style={{ padding: '40px', backgroundColor: '#F9F9F9', minHeight: '100vh' }}>
+        <header style={{ marginBottom: '30px' }}><button onClick={() => setView('list')} style={{ background: 'none', border: 'none', color: colors.gray, cursor: 'pointer', fontWeight: 'bold' }}>← キャンセルして戻る</button><h1 style={{ fontSize: '24px', marginTop: '10px' }}>{view === 'print_tr' ? '実習生情報の印刷設定' : '会社情報の印刷設定'}</h1></header>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
+          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '8px', border: `1px solid ${colors.border}` }}>
+            <h3 style={{ marginBottom: '15px', fontSize: '16px' }}>1. 対象を選択</h3>
+            <p style={{ fontSize: '12px', color: colors.gray, marginBottom: '5px' }}>印刷元の会社</p>
+            <select style={{ width: '100%', padding: '10px', marginBottom: '20px', borderRadius: '4px', border: `1px solid ${colors.border}` }} value={printCoId} onChange={(e) => { setPrintCoId(e.target.value); setPrintTrIds([]); }}>
+              <option value="">会社を選択してください</option>
+              {companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+            </select>
+            {view === 'print_tr' && selectedCompany && (
+              <>
+                <p style={{ fontSize: '12px', color: colors.gray, marginBottom: '5px' }}>印刷する実習生（複数選択可）</p>
+                <div style={{ maxHeight: '300px', overflowY: 'auto', border: `1px solid ${colors.border}`, padding: '10px', borderRadius: '4px' }}>
+                  {selectedCompany.trainees?.map((t: any) => (
+                    <label key={t.id} style={{ display: 'block', padding: '8px', borderBottom: `1px solid #f2f2f2`, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={printTrIds.includes(t.id)} onChange={(e) => { if (e.target.checked) setPrintTrIds([...printTrIds, t.id]); else setPrintTrIds(printTrIds.filter(id => id !== t.id)); }} style={{ marginRight: '10px' }} />{t.traineeName} ({t.batch})
+                    </label>
+                  ))}
+                </div>
+                <button onClick={() => setPrintTrIds(selectedCompany.trainees.map((t: any) => t.id))} style={{ ...btnBase, background: colors.lightGray, marginTop: '10px', width: '100%' }}>全員選択</button>
+              </>
+            )}
+          </div>
+          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '8px', border: `1px solid ${colors.border}` }}>
+            <h3 style={{ marginBottom: '15px', fontSize: '16px' }}>2. 印刷項目を選択</h3>
+            <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
+              <button onClick={() => setPrintFields(Object.keys(labels))} style={{ flex: 1, padding: '5px', fontSize: '11px', background: colors.lightGray, border: 'none', borderRadius: '3px' }}>全選択</button>
+              <button onClick={() => setPrintFields([])} style={{ flex: 1, padding: '5px', fontSize: '11px', background: colors.lightGray, border: 'none', borderRadius: '3px' }}>解除</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
+              {Object.keys(labels).map(key => (
+                <label key={key} style={{ fontSize: '13px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={printFields.includes(key)} onChange={(e) => { if (e.target.checked) setPrintFields([...printFields, key]); else setPrintFields(printFields.filter(f => f !== key)); }} style={{ marginRight: '8px' }} />{labels[key]}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ marginTop: '30px', textAlign: 'center' }}><button disabled={!printCoId || printFields.length === 0 || (view === 'print_tr' && printTrIds.length === 0)} onClick={() => setIsPreview(true)} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', padding: '15px 60px', fontSize: '16px' }}>プレビューを表示する</button></div>
+      </main>
+    );
   }
 
   // --- トップ一覧画面 ---
@@ -410,21 +525,17 @@ export default function Home() {
     const pendingList: any[] = [];
 
     companies.forEach(c => {
-      // 保留リストの構築
+      // 保留リスト
       (c.pendingAlerts || []).forEach((p: any) => {
         const trainee = (c.trainees || []).find((t: any) => t.id === p.traineeId);
-        if (trainee) {
-          pendingList.push({ co: c, trainee, field: labelMapTr[p.field], deadline: p.deadline, memo: p.memo, movedAt: p.movedAt });
-        }
+        if (trainee) pendingList.push({ co: c, trainee, field: labelMapTr[p.field], deadline: p.deadline, memo: p.memo, movedAt: p.movedAt });
       });
 
-      // 通常のアラートリスト（保留中のものは除外）
+      // 通常アラート
       (c.trainees || []).forEach((t: any) => {
         ["stayLimit", "examDate"].forEach(key => {
-          // すでに保留済みかチェック
           const isPending = (c.pendingAlerts || []).some((p: any) => p.traineeId === t.id && p.field === key);
           if (isPending) return;
-
           const style = getAlertStyle(t[key], key, t.category);
           if (style.border && style.border !== 'none') {
             alertList.push({ co: c, trainee: t, fieldKey: key, companyName: c.companyName, traineeName: t.traineeName, field: labelMapTr[key], deadline: t[key], days: getRemainingDays(t[key]), style });
@@ -449,139 +560,147 @@ export default function Home() {
           </div>
         </header>
 
-        {/* 期限注意リスト & 保留リスト (左右分割) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
-          {/* 左：期限注意リスト */}
-          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: `1px solid ${colors.border}`, maxHeight: '350px', overflowY: 'auto' }}>
-            <h3 style={{ fontSize: '16px', marginBottom: '15px' }}>⚠️ 期限注意リスト</h3>
-            {alertList.length === 0 ? <p style={{ fontSize: '13px', color: colors.gray }}>注意対象はいません。</p> : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                <thead><tr style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}` }}><th style={{ padding: '8px' }}>会社名</th><th style={{ padding: '8px' }}>実習生名</th><th style={{ padding: '8px' }}>項目</th><th style={{ padding: '8px' }}>残り</th></tr></thead>
-                <tbody>
-                  {alertList.sort((a, b) => (a.days ?? 999) - (b.days ?? 999)).map((item, idx) => (
-                    <tr key={idx} onClick={() => setSelectedAlert(item)} style={{ borderBottom: `1px solid #f9f9f9`, cursor: 'pointer', ...item.style }}>
-                      <td style={{ padding: '8px' }}>{item.companyName}</td><td style={{ padding: '8px' }}>{item.traineeName}</td><td style={{ padding: '8px' }}>{item.field}</td><td style={{ padding: '8px', fontWeight: 'bold' }}>あと {item.days} 日</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-          {/* 右：保留リスト */}
-          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: `1px solid ${colors.border}`, maxHeight: '350px', overflowY: 'auto' }}>
-            <h3 style={{ fontSize: '16px', marginBottom: '15px', color: colors.gray }}>⏸ 保留リスト</h3>
-            {pendingList.length === 0 ? <p style={{ fontSize: '13px', color: colors.gray }}>保留中の項目はありません。</p> : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-                <thead><tr style={{ textAlign: 'left', borderBottom: `1px solid ${colors.border}` }}><th style={{ padding: '8px' }}>会社/実習生</th><th style={{ padding: '8px' }}>項目/期限</th><th style={{ padding: '8px' }}>保留理由</th></tr></thead>
-                <tbody>
-                  {pendingList.map((item, idx) => (
-                    <tr key={idx} onClick={() => { setCurrentCo(item.co); setSelectedTrId(item.trainee.id); setView('detail'); }} style={{ borderBottom: `1px solid #f9f9f9`, cursor: 'pointer' }}>
-                      <td style={{ padding: '8px' }}><b>{item.co.companyName}</b><br/>{item.trainee.traineeName}</td>
-                      <td style={{ padding: '8px' }}>{item.field}<br/>{item.deadline}</td>
-                      <td style={{ padding: '8px', color: colors.info }}>{item.memo}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-
-        {/* TODOリスト (3分割表示) */}
-        <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '25px', border: `1px solid ${colors.border}`, marginBottom: '40px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h3 style={{ fontSize: '18px' }}>📝 TODO管理</h3>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setShowAssigneeModal(true)} style={{ ...btnBase, backgroundColor: colors.info, color: '#fff' }}>担当者別に見る</button>
-              <button onClick={() => { setTodoFormData(initialTodoForm); setIsEditingTodo(false); setShowTodoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ TODO登録</button>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '25px', marginBottom: '35px' }}>
+          
+          {/* 左：TODO管理 */}
+          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: `1px solid ${colors.border}`, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <h3 style={{ fontSize: '17px', fontWeight: 'bold' }}>📝 TODOリスト <span style={{ fontSize: '11px', color: colors.gray, fontWeight: 'normal' }}>（完了したらチェック）</span></h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => setShowAssigneeModal(true)} style={{ ...btnBase, padding: '4px 10px', fontSize: '10px', backgroundColor: colors.info, color: '#fff' }}>担当別表示</button>
+                <button onClick={() => { setTodoFormData(initialTodoForm); setIsEditingTodo(false); setShowTodoForm(true); }} style={{ ...btnBase, padding: '4px 10px', fontSize: '10px', backgroundColor: colors.accent, color: '#fff' }}>追加</button>
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {todoCategoryOptions.map(cat => (
+                <div key={cat} style={{ border: `1px solid ${colors.lightGray}`, borderRadius: '6px', overflow: 'hidden' }}>
+                  <div style={{ backgroundColor: colors.lightGray, padding: '4px 12px', fontSize: '13px', fontWeight: 'bold' }}>【{cat}】</div>
+                  <div style={{ padding: '5px', overflowY: 'auto', maxHeight: '250px', display: 'flex', flexDirection: 'column' }}>
+                    {todos.filter(t => (t.todoCategory || "TODO") === cat).map(todo => {
+                      const company = companies.find(c => c.id === todo.companyId);
+                      const trainee = company?.trainees?.find((tr: any) => tr.id === Number(todo.traineeId));
+                      const alertStyle = getAlertStyle(todo.deadline, 'deadline', '');
+                      return (
+<div key={todo.id} style={{ 
+                          padding: '10px 12px', borderBottom: `1px solid ${colors.lightGray}`, cursor: 'pointer', 
+                          display: 'flex', alignItems: 'center', gap: '15px', fontSize: '14px', ...alertStyle 
+                        }} onClick={() => setSelectedTodo(todo)}>
+                          {/* チェックボックス */}
+                          <input type="checkbox" onChange={() => handleCompleteTodo(todo)} onClick={(e) => e.stopPropagation()} style={{ width: '18px', height: '18px' }} />
+                          
+                          {/* 会社名：幅を220pxに固定（フル表示） */}
+                          <div style={{ fontWeight: '800', width: '220px', flexShrink: 0 }}>
+                            {company?.companyName || "会社名不明"}
+                          </div>
+                          
+                          {/* 項目名（タスク）：残りの幅をすべて使う */}
+                          <div style={{ flex: 1, fontWeight: 'bold' }}>
+                            {todo.task}
+                          </div>
+                          
+                          {/* 担当者名：中央に1箇所だけ、幅80pxで表示 */}
+                          <div style={{ width: '80px', fontSize: '12px', color: colors.info, textAlign: 'center', flexShrink: 0, fontWeight: 'bold' }}>
+                            {todo.assignee ? `[${todo.assignee}]` : ""}
+                          </div>
+                          
+                          {/* バッチ・個人名：幅120px */}
+                          <div style={{ width: '120px', fontSize: '12px', color: colors.gray, flexShrink: 0 }}>
+                            {trainee ? trainee.traineeName : (todo.batch !== "なし" ? todo.batch : "")}
+                          </div>
+                          
+                          {/* 期限：右寄せ、幅100px */}
+                          <div style={{ width: '100px', fontSize: '12px', color: colors.danger, textAlign: 'right', fontWeight: 'bold', flexShrink: 0 }}>
+                            {todo.deadline ? `期限 ${todo.deadline.replace('2026/', '')}` : ""}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
-            {todoCategoryOptions.map(cat => (
-              <div key={cat} style={{ backgroundColor: '#FBFBFB', padding: '15px', borderRadius: '8px', border: `1px solid ${colors.border}` }}>
-                <h4 style={{ fontSize: '14px', marginBottom: '15px', borderBottom: `2px solid ${colors.accent}`, paddingBottom: '5px' }}>【{cat}】</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {todos.filter(t => (t.todoCategory || "TODO") === cat).map(todo => {
-                    const company = companies.find(c => c.id === todo.companyId);
-                    const trainee = company?.trainees?.find((tr: any) => tr.id === Number(todo.traineeId));
-                    const style = getAlertStyle(todo.deadline, 'deadline', '');
-                    return (
-                      <div key={todo.id} style={{ padding: '12px', backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: '6px', cursor: 'pointer', ...style }} onClick={() => setSelectedTodo(todo)}>
-                        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                          <input type="checkbox" onChange={() => handleCompleteTodo(todo)} onClick={(e) => e.stopPropagation()} style={{ marginTop: '4px' }} />
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: '800', fontSize: '15px', color: colors.text }}>{company?.companyName || "不明な会社"}</div>
-                            <div style={{ fontSize: '12px', marginTop: '4px', fontWeight: 'bold' }}>{todo.task}</div>
-                            <div style={{ fontSize: '11px', color: colors.gray, marginTop: '2px' }}>
-                              {trainee ? trainee.traineeName : (todo.batch !== "なし" ? todo.batch : "")} 
-                              {todo.deadline && ` | 期限: ${todo.deadline}`}
-                              {todo.assignee && <span style={{ marginLeft: '8px', color: colors.info }}>[担当: {todo.assignee}]</span>}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+          {/* 右：期限リスト */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: `1px solid ${colors.border}`, flex: 1 }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '12px', color: colors.danger }}>⚠️ 期限注意リスト</h3>
+              <div style={{ overflowY: 'auto', maxHeight: '350px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <tbody>
+                    {alertList.sort((a, b) => (a.days ?? 999) - (b.days ?? 999)).map((item, idx) => (
+                      <tr key={idx} onClick={() => setSelectedAlert(item)} style={{ borderBottom: `1px solid #f0f0f0`, cursor: 'pointer', ...item.style }}>
+                        <td style={{ padding: '8px 5px' }}><b>{item.companyName}</b><br/>{item.traineeName}</td>
+                        <td style={{ padding: '8px 5px', color: colors.gray }}>{item.field}</td>
+                        <td style={{ padding: '8px 5px', textAlign: 'right', fontWeight: 'bold' }}>
+                          {formatDays(item.days)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))}
+            </div>
+            <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: `1px solid ${colors.border}`, flex: 1 }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '12px', color: colors.gray }}>⏸ 保留リスト</h3>
+              <div style={{ overflowY: 'auto', maxHeight: '200px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                  <tbody>
+                    {pendingList.map((item, idx) => (
+                      <tr key={idx} onClick={() => { setCurrentCo(item.co); setSelectedTrId(item.trainee.id); setView('detail'); }} style={{ borderBottom: `1px solid #f0f0f0`, cursor: 'pointer' }}>
+                        <td style={{ padding: '6px 5px' }}><b>{item.co.companyName}</b><br/>{item.trainee.traineeName}</td>
+                        <td style={{ padding: '6px 5px', color: colors.gray }}>{item.field}<br/>({item.deadline})</td>
+                        <td style={{ padding: '6px 5px', color: colors.info }}>{item.memo}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* 実施者一覧 (変更なし) */}
-        <h3 style={{ fontSize: '16px', marginBottom: '15px' }}>🏢 実習実施者一覧</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '15px' }}>
+        {/* 実施者一覧 */}
+        <h3 style={{ fontSize: '17px', fontWeight: 'bold', marginBottom: '15px' }}>🏢 実習実施者一覧</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '15px' }}>
           {companies.map(c => {
-            const trs = c.trainees || [];
-            const activeCount = trs.filter((t: any) => t.category !== "実習終了").length;
-            const alertTrigger = trs.some((t: any) => hasAlert(t));
+            const activeCount = (c.trainees || []).filter((t: any) => t.category !== "実習終了").length;
+            const alertTrigger = (c.trainees || []).some((t: any) => hasAlert(t));
             return (
-              <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); setFilterBatch('すべて'); }} style={{ backgroundColor: '#fff', padding: '15px', borderRadius: sharpRadius, border: alertTrigger ? `2px solid ${colors.danger}` : `1px solid ${colors.border}`, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '5px' }}>{c.companyName}</div>
-                <div style={{ fontSize: '12px', color: colors.gray }}>受入中: <span style={{ fontWeight: '800', color: colors.accent }}>{activeCount}</span> 名</div>
+              <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); setFilterBatch('すべて'); }} style={{ backgroundColor: '#fff', padding: '14px', borderRadius: '6px', border: alertTrigger ? `2px solid ${colors.danger}` : `1px solid ${colors.border}`, cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}>
+                <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px' }}>{c.companyName}</div>
+                <div style={{ fontSize: '12px', color: colors.gray }}>受入中: <span style={{ fontWeight: 'bold', color: colors.accent }}>{activeCount}</span> 名</div>
               </div>
             );
           })}
         </div>
 
-        {/* --- モーダル類 --- */}
-
-        {/* 期限アラート詳細 & 保留登録モーダル */}
+        {/* --- ポップアップ類 --- */}
         {selectedAlert && (
           <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3500, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', width: '450px' }}>
-              <h3 style={{ marginBottom: '10px' }}>期限確認</h3>
+              <h3>期限確認</h3>
               <div style={{ padding: '15px', background: '#f9f9f9', borderRadius: '6px', fontSize: '14px', marginBottom: '20px' }}>
                 <b>会社：</b> {selectedAlert.companyName}<br/>
                 <b>対象：</b> {selectedAlert.traineeName}<br/>
                 <b>項目：</b> {selectedAlert.field}<br/>
-                <b>期限：</b> {selectedAlert.deadline} (残り {selectedAlert.days} 日)
+                <b>期限：</b> {selectedAlert.deadline} ({formatDays(selectedAlert.days)})
               </div>
-              
-              <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '20px', marginTop: '20px' }}>
-                <label style={{ fontSize: '12px', fontWeight: 'bold' }}>保留の理由（必須）</label>
-                <textarea 
-                  placeholder="保留にする理由をメモしてください" 
-                  style={{ width: '100%', height: '80px', padding: '10px', marginTop: '5px', border: `1px solid ${colors.border}` }}
-                  value={pendingMemo}
-                  onChange={(e) => setPendingMemo(e.target.value)}
-                />
-                <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-                  <button onClick={() => { setSelectedAlert(null); setPendingMemo(""); }} style={{ ...btnBase, backgroundColor: colors.lightGray, flex: 1 }}>閉じる</button>
-                  <button onClick={handleMoveToPending} style={{ ...btnBase, backgroundColor: colors.info, color: '#fff', flex: 1.5 }}>この項目を保留リストへ</button>
-                </div>
+              <label style={{ fontSize: '12px', fontWeight: 'bold' }}>保留の理由（必須）</label>
+              <textarea placeholder="理由をメモしてください" style={{ width: '100%', height: '80px', padding: '10px', marginTop: '5px', border: `1px solid ${colors.border}` }} value={pendingMemo} onChange={(e) => setPendingMemo(e.target.value)} />
+              <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                <button onClick={() => { setSelectedAlert(null); setPendingMemo(""); }} style={{ ...btnBase, backgroundColor: colors.lightGray, flex: 1 }}>閉じる</button>
+                <button onClick={handleMoveToPending} style={{ ...btnBase, backgroundColor: colors.info, color: '#fff', flex: 1.5 }}>保留リストへ移動</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* TODO入力フォーム */}
         {showTodoForm && (
           <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', width: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
               <h3>TODO{isEditingTodo ? '編集' : '登録'}</h3>
-              
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '15px' }}>
                 <div>
                   <label style={{ fontSize: '11px', fontWeight: 'bold' }}>分類</label>
@@ -592,11 +711,10 @@ export default function Home() {
                 <div>
                   <label style={{ fontSize: '11px', fontWeight: 'bold' }}>担当者</label>
                   <select style={{ width: '100%', padding: '8px' }} value={todoFormData.assignee} onChange={e => setTodoFormData({ ...todoFormData, assignee: e.target.value })}>
-                    {assigneeOptions.map(o => <option key={o} value={o}>{o === "" ? "(空)" : o}</option>)}
+                    {assigneeOptions.map(o => <option key={o} value={o}>{o === "" ? "(空白)" : o}</option>)}
                   </select>
                 </div>
               </div>
-
               <label style={{ fontSize: '11px', display: 'block', marginTop: '15px' }}>会社名</label>
               <select style={{ width: '100%', padding: '8px', marginBottom: '10px' }} value={todoFormData.companyId} onChange={e => setTodoFormData({ ...todoFormData, companyId: e.target.value, traineeId: "" })}>
                 <option value="">会社を選択</option>{companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
@@ -630,72 +748,50 @@ export default function Home() {
           </div>
         )}
 
-        {/* 担当者別フィルタポップアップ */}
         {showAssigneeModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 4000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', width: '600px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
-              <h3 style={{ marginBottom: '20px' }}>担当者別TODO表示</h3>
+              <h3>担当者別TODO</h3>
               <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
                 {["担当者無", "朝比奈", "政所"].map(name => (
-                  <button 
-                    key={name} 
-                    onClick={() => setSelectedAssigneeFilter(name === "担当者無" ? "" : name)}
-                    style={{ ...btnBase, backgroundColor: (selectedAssigneeFilter === (name === "担当者無" ? "" : name)) ? colors.info : colors.lightGray, color: (selectedAssigneeFilter === (name === "担当者無" ? "" : name)) ? '#fff' : '#000' }}
-                  >
-                    {name}
-                  </button>
+                  <button key={name} onClick={() => setSelectedAssigneeFilter(name === "担当者無" ? "" : name)} style={{ ...btnBase, backgroundColor: (selectedAssigneeFilter === (name === "担当者無" ? "" : name)) ? colors.info : colors.lightGray, color: (selectedAssigneeFilter === (name === "担当者無" ? "" : name)) ? '#fff' : '#000' }}>{name}</button>
                 ))}
               </div>
-              <div style={{ flex: 1, overflowY: 'auto', border: `1px solid ${colors.border}`, padding: '15px', borderRadius: '6px' }}>
-                {selectedAssigneeFilter !== null ? (
-                  todos.filter(t => (t.assignee || "") === selectedAssigneeFilter).length === 0 ? (
-                    <p>該当するTODOはありません。</p>
-                  ) : (
-                    todos.filter(t => (t.assignee || "") === selectedAssigneeFilter).map(todo => {
-                      const company = companies.find(c => c.id === todo.companyId);
-                      const trainee = company?.trainees?.find((tr: any) => tr.id === Number(todo.traineeId));
-                      return (
-                        <div key={todo.id} style={{ padding: '10px', borderBottom: `1px solid ${colors.border}`, fontSize: '13px' }}>
-                          <span 
-                            onClick={() => { setCurrentCo(company); setView('detail'); setShowAssigneeModal(false); }}
-                            style={{ fontWeight: 'bold', color: colors.accent, cursor: 'pointer', textDecoration: 'underline' }}
-                          >
-                            {company?.companyName}
-                          </span>
-                          {" / "}
-                          {trainee && (
-                            <span 
-                              onClick={() => { setCurrentCo(company); setSelectedTrId(trainee.id); setView('detail'); setShowAssigneeModal(false); }}
-                              style={{ color: colors.info, cursor: 'pointer', textDecoration: 'underline' }}
-                            >
-                              {trainee.traineeName}
-                            </span>
-                          )}
-                          <div style={{ fontWeight: 'bold', marginTop: '5px' }}>{todo.task}</div>
-                          <div style={{ fontSize: '11px', color: colors.gray }}>期限: {todo.deadline || "なし"}</div>
-                        </div>
-                      );
-                    })
-                  )
-                ) : <p>担当者を選択してください。</p>}
+              <div style={{ flex: 1, overflowY: 'auto', border: `1px solid ${colors.border}`, padding: '15px' }}>
+                {todos.filter(t => (t.assignee || "") === selectedAssigneeFilter).map(todo => {
+                  const company = companies.find(c => c.id === todo.companyId);
+                  const trainee = company?.trainees?.find((tr: any) => tr.id === Number(todo.traineeId));
+                  return (
+                    <div key={todo.id} style={{ padding: '10px', borderBottom: `1px solid ${colors.border}` }}>
+                      <span onClick={() => { setCurrentCo(company); setView('detail'); setShowAssigneeModal(false); }} style={{ fontWeight: 'bold', color: colors.accent, cursor: 'pointer', textDecoration: 'underline' }}>{company?.companyName}</span>
+                      {trainee && <span onClick={() => { setCurrentCo(company); setSelectedTrId(trainee.id); setView('detail'); setShowAssigneeModal(false); }} style={{ marginLeft: '10px', color: colors.info, cursor: 'pointer', textDecoration: 'underline' }}>{trainee.traineeName}</span>}
+                      <div style={{ fontWeight: 'bold', marginTop: '5px' }}>{todo.task}</div>
+                    </div>
+                  );
+                })}
               </div>
-              <button onClick={() => { setShowAssigneeModal(false); setSelectedAssigneeFilter(null); }} style={{ ...btnBase, marginTop: '20px', backgroundColor: colors.lightGray }}>閉じる</button>
+              <button onClick={() => setShowAssigneeModal(false)} style={{ ...btnBase, marginTop: '20px', backgroundColor: colors.lightGray }}>閉じる</button>
             </div>
           </div>
         )}
 
-        {/* TODO詳細ポップアップ (既存を修正) */}
         {selectedTodo && !showTodoForm && (
           <div onClick={() => setSelectedTodo(null)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 2500, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <div onClick={e => e.stopPropagation()} style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', width: '400px' }}>
-              <div onClick={() => { setCurrentCo(companies.find(c => c.id === selectedTodo.companyId)); setView('detail'); setSelectedTodo(null); }} style={{ fontSize: '15px', color: colors.accent, cursor: 'pointer', fontWeight: '800', textDecoration: 'underline', marginBottom: '5px' }}>{companies.find(c => c.id === selectedTodo.companyId)?.companyName}</div>
-              <h3 style={{ marginBottom: '15px' }}>{selectedTodo.task}</h3>
-              <div style={{ fontSize: '14px', background: '#f9f9f9', padding: '15px', borderRadius: '4px', marginBottom: '15px' }}>{selectedTodo.detail || '詳細なし'}</div>
-              <div style={{ fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
-                <span>期限: <b>{selectedTodo.deadline || '未設定'}</b></span>
-                {selectedTodo.assignee && <span style={{ color: colors.info }}>担当: {selectedTodo.assignee}</span>}
+              <div onClick={() => { setCurrentCo(companies.find(c => c.id === selectedTodo.companyId)); setView('detail'); setSelectedTodo(null); }} style={{ fontSize: '15px', color: colors.accent, cursor: 'pointer', fontWeight: '800', textDecoration: 'underline' }}>{companies.find(c => c.id === selectedTodo.companyId)?.companyName}</div>
+              <h3>{selectedTodo.task}</h3>
+              {/* ポップアップ詳細に対象を表示 */}
+              <div style={{ fontSize: '12px', color: colors.gray, marginBottom: '10px' }}>
+                対象：{
+                  (() => {
+                    const company = companies.find(c => c.id === selectedTodo.companyId);
+                    const trainee = company?.trainees?.find((tr: any) => tr.id === Number(selectedTodo.traineeId));
+                    return trainee ? `${trainee.traineeName} (${trainee.batch})` : (selectedTodo.batch !== "なし" ? selectedTodo.batch : "全体");
+                  })()
+                }
               </div>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+              <div style={{ fontSize: '14px', background: '#f9f9f9', padding: '15px', borderRadius: '4px', marginBottom: '15px' }}>{selectedTodo.detail || '詳細なし'}</div>
+              <div style={{ display: 'flex', gap: '10px' }}>
                 <button onClick={() => { setTodoFormData(selectedTodo); setIsEditingTodo(true); setShowTodoForm(true); setSelectedTodo(null); }} style={{ ...btnBase, flex: 1, backgroundColor: colors.info, color: '#fff' }}>編集</button>
                 <button onClick={() => setSelectedTodo(null)} style={{ ...btnBase, flex: 1, backgroundColor: colors.lightGray }}>閉じる</button>
               </div>
@@ -703,7 +799,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* その他の既存モーダル (省略...) */}
         {showTrMethodModal && (<div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}><div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', textAlign: 'center' }}><h3>登録方法選択</h3><div style={{ display: 'flex', gap: '15px', marginTop: '20px' }}><button onClick={() => { setShowTrMethodModal(false); setTrFormData(initialTraineeForm); setIsEditingTr(false); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>手入力</button><button onClick={() => { setShowTrMethodModal(false); setShowCsvModal(true); }} style={{ ...btnBase, backgroundColor: '#27ae60', color: '#fff' }}>CSV</button><button onClick={() => setShowTrMethodModal(false)} style={{ ...btnBase, backgroundColor: colors.lightGray }}>中止</button></div></div></div>)}
         {showCoMethodModal && (<div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}><div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', textAlign: 'center' }}><h3>登録方法選択</h3><div style={{ display: 'flex', gap: '15px', marginTop: '20px' }}><button onClick={() => { setShowCoMethodModal(false); setCoFormData(initialCompanyForm); setIsEditingCo(false); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>手入力</button><button onClick={() => { setShowCoMethodModal(false); setShowCoCsvModal(true); }} style={{ ...btnBase, backgroundColor: '#27ae60', color: '#fff' }}>CSV</button><button onClick={() => setShowCoMethodModal(false)} style={{ ...btnBase, backgroundColor: colors.lightGray }}>中止</button></div></div></div>)}
         {showCsvModal && (<div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}><div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', width: '400px' }}><h3>実習生CSV</h3><select id="csvCompany" style={{ width: '100%', padding: '8px', marginBottom: '15px' }}><option value="">会社選択</option>{companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}</select><input type="file" accept=".csv" onChange={(e) => { const file = e.target.files?.[0]; const coId = (document.getElementById('csvCompany') as HTMLSelectElement).value; if (file) handleCsvImport(coId, file); }} /><button onClick={() => setShowCsvModal(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, width: '100%', marginTop: '15px' }}>閉じる</button></div></div>)}
@@ -714,10 +809,8 @@ export default function Home() {
     );
   }
 
-  // --- 会社詳細画面 (変更なしのため省略...) ---
+  // --- 会社詳細画面 ---
   if (view === 'detail') {
-    // ... 前回の回答と同じ内容 ...
-    // ※ ただし、完了したTODOを削除する際に pendingAlerts 等が消えないように Firestore の構造は守られます
     const currentTrainee = currentCo.trainees?.find((t: any) => t.id === selectedTrId);
     return (
       <main style={{ backgroundColor: '#FBFBFB', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -753,7 +846,10 @@ export default function Home() {
                 {(currentCo.completedTodos || []).sort((a: any, b: any) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()).map((todo: any, idx: number) => (
                   <div key={idx} style={{ padding: '8px', fontSize: '12px', border: `1px solid ${colors.border}`, borderRadius: '4px', backgroundColor: '#fcfcfc', position: 'relative' }}>
                     <div onClick={() => setSelectedTodo(todo)} style={{ cursor: 'pointer' }}><div style={{ fontWeight: 'bold' }}>{todo.task}</div><div style={{ fontSize: '10px', color: colors.gray }}>完了: {todo.completedAt}</div></div>
-                    <button onClick={() => handleDeleteCompletedTodo(todo.completedId)} style={{ position: 'absolute', top: '5px', right: '5px', background: 'none', border: 'none', color: colors.danger, fontSize: '10px' }}>×</button>
+                    <div style={{ position: 'absolute', top: '5px', right: '5px', display: 'flex', gap: '5px' }}>
+                      <button onClick={() => handleUndoTodo(todo)} style={{ background: '#E3F2FD', border: '1px solid #2196F3', color: '#2196F3', fontSize: '9px', padding: '2px 4px', borderRadius: '2px', cursor: 'pointer' }}>もとに戻す</button>
+                      <button onClick={() => handleDeleteCompletedTodo(todo.completedId)} style={{ background: 'none', border: 'none', color: colors.danger, fontSize: '10px', cursor: 'pointer' }}>×</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -802,7 +898,7 @@ export default function Home() {
   return null;
 }
 
-// --- サブコンポーネント (CoFormModal, TrFormModal は既存通りだが担当者等のUIを必要に応じて追加) ---
+// --- サブコンポーネント ---
 function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoForm, colors, btnBase, copy, grayCBtn }: any) {
   const handleChange = (k: string, v: string) => setCoFormData({ ...coFormData, [k]: v });
   return (
