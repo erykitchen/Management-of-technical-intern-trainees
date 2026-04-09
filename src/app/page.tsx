@@ -661,11 +661,12 @@ export default function Home() {
         }
       });
 
-      (c.trainees || []).forEach((t: any) => {
+(c.trainees || []).forEach((t: any) => {
         const isPending = (c.pendingAlerts || []).some((p: any) => String(p.traineeId) === String(t.id) && p.field === "stayLimit");
         if (!isPending) {
           const style = getAlertStyle(t.stayLimit, "stayLimit", t.category);
-          if (style.borderWidth && style.borderWidth !== '0px') {
+          // 判定を borderWidth から borderTopWidth に変更
+          if (style.borderTopWidth && style.borderTopWidth !== '0px') {
             alertList.push({ co: c, trainee: t, fieldKey: "stayLimit", companyName: c.companyName, traineeName: t.traineeName, field: labelMapTr.stayLimit, deadline: t.stayLimit, days: getRemainingDays(t.stayLimit), style });
           }
         }
