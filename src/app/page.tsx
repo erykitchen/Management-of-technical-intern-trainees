@@ -28,6 +28,9 @@ const labelMapTr: { [key: string]: string } = {
   trainingEndDate: "講習終了日", examDate: "技能検定時期", memo: "備考（メモ）"
 };
 
+const basicFieldsTr = ["traineeName", "kana", "traineeZip", "traineeAddress", "category", "nationality", "birthday", "age", "gender", "stayLimit", "cardNumber", "passportLimit", "passportNumber", "certificateNumber", "endDate"];
+const basicFieldsCo = ["companyName", "representative", "zipCode", "address", "tel", "corporateNumber", "implementationNumber"];
+
 const categoryOptions = ["技能実習1号", "技能実習2号(1)", "技能実習2号(2)", "特定技能", "実習終了"];
 const batchOptions = ["なし", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
 const statusOptions = ["選択する", "認定申請準備中", "認定手続中", "ビザ申請中", "入国待機", "入国後講習中", "実習中", "一時帰国中", "その他", "失踪"];
@@ -62,6 +65,8 @@ const initialTodoForm = {
 // --- 2. 便利関数 ---
 const convertToAD = (str: string) => {
   if (!str || typeof str !== 'string') return str;
+  if (str.includes('～') || str.includes('~')) return str;
+
   let text = str.trim().replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
   const eras: { [key: string]: number } = { '令和': 2018, '平成': 1988, '昭和': 1925, 'R': 2018, 'H': 1988, 'S': 1925 };
   for (let era in eras) {
@@ -86,7 +91,9 @@ const convertToAD = (str: string) => {
 };
 
 const getRemainingDays = (dateStr: string) => {
-  const ad = convertToAD(dateStr);
+  if (!dateStr) return null;
+  const baseDate = dateStr.split(/[～~]/)[0];
+  const ad = convertToAD(baseDate);
   const target = new Date(ad.replace(/\//g, '-'));
   if (isNaN(target.getTime())) return null;
   const today = new Date();
@@ -94,31 +101,69 @@ const getRemainingDays = (dateStr: string) => {
   return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 };
 
-// 日数表示の整形
 const formatDays = (days: number | null) => {
   if (days === null) return "-";
   if (days < 0) return `${Math.abs(days)}日超過`;
+  if (days === 0) return "本日";
   return `あと${days}日`;
 };
 
+// ★ エラー回避のため Shorthand (border) は使用せず、全方向を個別指定に展開
 const getAlertStyle = (dateStr: string, fieldKey: string, category: string): any => {
   if (!dateStr || category === "実習終了") return { color: '#2C3E50' };
-  const alertFields = ["stayLimit", "examDate", "deadline"];
-  if (!alertFields.includes(fieldKey)) return {};
+
+  // 色付け対象とするキーを限定する
+  const isTargetField = fieldKey === "stayLimit" || fieldKey === "deadline";
+  if (!isTargetField) return { color: '#2C3E50' };
+
   const diffDays = getRemainingDays(dateStr);
   if (diffDays === null) return { color: '#2C3E50' };
 
-  if (diffDays <= 30) return { border: '4px double #FFD700', outline: '2px solid #E74C3C', outlineOffset: '-4px', backgroundColor: '#FFF5F5' };
-  else if (diffDays <= 60) return { border: '2px solid #E74C3C', backgroundColor: '#FFF5F5' };
-  else if (diffDays <= 90) return { border: '2px solid #FFD700', backgroundColor: '#FFFFF0' };
+  // 共通の個別ボーダー指定（これを使うことでエラーを回避）
+  const getBorderSideStyles = (width: string, color: string) => ({
+    borderTopStyle: 'solid', borderBottomStyle: 'solid', borderLeftStyle: 'solid', borderRightStyle: 'solid',
+    borderTopWidth: width, borderBottomWidth: width, borderLeftWidth: width, borderRightWidth: width,
+    borderTopColor: color, borderBottomColor: color, borderLeftColor: color, borderRightColor: color,
+  });
+
+  // 1. 超過 (共通：赤背景)
+  if (diffDays < 0) {
+    return { 
+      backgroundColor: '#FFCCCC', 
+      ...getBorderSideStyles('1px', '#E74C3C'),
+      color: '#B03A2E', 
+      fontWeight: 'bold' 
+    };
+  }
+
+  // 2. TODOリストの判定
+  if (fieldKey === "deadline") {
+    if (diffDays === 0) return { 
+      backgroundColor: '#FFF0F0', ...getBorderSideStyles('2px', '#E74C3C'), color: '#E74C3C', fontWeight: 'bold' 
+    };
+    if (diffDays <= 3) return { ...getBorderSideStyles('2px', '#E74C3C'), color: '#E74C3C' };
+    if (diffDays <= 5) return { ...getBorderSideStyles('2px', '#F57C00'), color: '#F57C00' };
+    if (diffDays <= 10) return { ...getBorderSideStyles('2px', '#FFD700'), color: '#8B8000' };
+  } 
+  // 3. 期限リスト (stayLimit) の判定
+  else if (fieldKey === "stayLimit") {
+    if (diffDays <= 10) return { 
+      backgroundColor: '#FFF0F0', ...getBorderSideStyles('2px', '#E74C3C'), color: '#E74C3C', fontWeight: 'bold' 
+    };
+    if (diffDays <= 30) return { ...getBorderSideStyles('2px', '#E74C3C'), color: '#E74C3C' };
+    if (diffDays <= 50) return { ...getBorderSideStyles('2px', '#F57C00'), color: '#F57C00' };
+    if (diffDays <= 60) return { ...getBorderSideStyles('2px', '#FFD700'), color: '#8B8000' };
+  }
+
   return {};
 };
 
 const hasAlert = (t: any) => {
-  const alertFields = ["stayLimit", "examDate"];
+  const alertFields = ["stayLimit"];
   return alertFields.some(key => {
     const style = getAlertStyle(t[key], key, t.category);
-    return style.border && style.border !== 'none';
+    // style.borderWidth ではなく、個別指定されたプロパティのいずれか（例: borderTopWidth）をチェックする
+    return style.borderTopWidth && style.borderTopWidth !== '0px';
   });
 };
 
@@ -146,7 +191,6 @@ const calculateDates = (entryDateStr: string) => {
   const fmt = (d: Date) => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
   return { end: fmt(endDate), renew: fmt(renewDate) };
 };
-
 // --- 3. メインコンポーネント ---
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -169,7 +213,6 @@ export default function Home() {
   const [coFormData, setCoFormData] = useState<any>(initialCompanyForm);
   const [filterBatch, setFilterBatch] = useState<string>('すべて');
 
-  // TODOステート
   const [todos, setTodos] = useState<any[]>([]);
   const [showTodoForm, setShowTodoForm] = useState(false);
   const [todoFormData, setTodoFormData] = useState<any>(initialTodoForm);
@@ -178,11 +221,11 @@ export default function Home() {
   const [showAssigneeModal, setShowAssigneeModal] = useState(false);
   const [selectedAssigneeFilter, setSelectedAssigneeFilter] = useState<string | null>(null);
 
-  // 期限アラート・保留ステート
   const [selectedAlert, setSelectedAlert] = useState<any>(null);
   const [pendingMemo, setPendingMemo] = useState("");
+  const [showPendingDetail, setShowPendingDetail] = useState<any>(null);
+  const [isEditingPending, setIsEditingPending] = useState(false);
 
-  // 印刷ステート
   const [printCoId, setPrintCoId] = useState("");
   const [printTrIds, setPrintTrIds] = useState<number[]>([]);
   const [printFields, setPrintFields] = useState<string[]>([]);
@@ -192,7 +235,7 @@ export default function Home() {
   const colors = { main: '#FFF9F0', accent: '#F57C00', text: '#2C3E50', gray: '#95A5A6', lightGray: '#F2F2F2', border: '#E0E0E0', white: '#FFFFFF', danger: '#E74C3C', info: '#3498DB' };
   const sharpRadius = '4px';
   const btnBase = { padding: '10px 18px', borderRadius: sharpRadius, border: 'none', cursor: 'pointer', fontWeight: '600' as const, fontSize: '13px' };
-  const grayCBtn = { width: '20px', height: '20px', fontSize: '9px', cursor: 'pointer', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: '3px', color: colors.gray, marginLeft: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+  const grayCBtn = { width: '20px', height: '20px', fontSize: '9px', cursor: 'pointer', backgroundColor: 'transparent', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border, borderRadius: '3px', color: colors.gray, marginLeft: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 
   const fetchCompanies = async () => {
     const q = query(collection(db, "companies"), orderBy("createdAt", "desc"));
@@ -228,7 +271,7 @@ export default function Home() {
     } catch (e) { alert("保存エラー"); }
   };
 
-const handleSaveTodo = async () => {
+  const handleSaveTodo = async () => {
     if (!todoFormData.task || !todoFormData.companyId) { 
       alert("会社名とやることは必須です"); 
       return; 
@@ -239,12 +282,10 @@ const handleSaveTodo = async () => {
     };
     try {
       if (isEditingTodo && todoFormData.id) {
-        // 既存ドキュメントの更新
         const todoId = todoFormData.id;
         const { id, ...dataToUpdate } = cleaned;
         await updateDoc(doc(db, "todos", todoId), dataToUpdate);
       } else {
-        // 新規登録
         await addDoc(collection(db, "todos"), { 
           ...cleaned, 
           createdAt: serverTimestamp(), 
@@ -262,13 +303,27 @@ const handleSaveTodo = async () => {
   const handleCompleteTodo = async (todo: any) => {
     try {
       const company = companies.find(c => c.id === todo.companyId);
-      if (!company) return;
-      const completedEntry = { ...todo, completedAt: new Date().toLocaleDateString(), completedId: Date.now() };
-      const updatedHistory = [...(company.completedTodos || []), completedEntry];
-      await updateDoc(doc(db, "companies", company.id), { completedTodos: updatedHistory });
+      if (!company) {
+        alert("対象の会社が見つかりません。");
+        return;
+      }
+      const completedEntry = { 
+        ...todo, 
+        completedAt: new Date().toLocaleDateString(), 
+        completedId: Date.now() 
+      };
+      const currentHistory = company.completedTodos || [];
+      const updatedHistory = [...currentHistory, completedEntry];
+      await updateDoc(doc(db, "companies", company.id), { 
+        completedTodos: updatedHistory 
+      });
       await deleteDoc(doc(db, "todos", todo.id));
-      fetchCompanies(); fetchTodos();
-    } catch (e) { alert("完了処理エラー"); }
+      setTodos(prev => prev.filter(t => t.id !== todo.id));
+      fetchCompanies(); 
+    } catch (e) { 
+      console.error(e);
+      alert("完了処理エラーが発生しました。"); 
+    }
   };
 
   const handleDeleteCompletedTodo = async (todoId: number) => {
@@ -296,6 +351,7 @@ const handleSaveTodo = async () => {
     try {
       const company = selectedAlert.co;
       const pendingItem = {
+        pendingId: Date.now(),
         traineeId: selectedAlert.trainee.id,
         field: selectedAlert.fieldKey,
         deadline: selectedAlert.deadline,
@@ -308,6 +364,30 @@ const handleSaveTodo = async () => {
       setPendingMemo("");
       fetchCompanies();
     } catch (e) { alert("保留エラー"); }
+  };
+
+  const handleUpdatePending = async (updatedMemo: string) => {
+    try {
+      const co = showPendingDetail.co;
+      const updatedList = co.pendingAlerts.map((p: any) => 
+        p.pendingId === showPendingDetail.pendingId ? { ...p, memo: updatedMemo } : p
+      );
+      await updateDoc(doc(db, "companies", co.id), { pendingAlerts: updatedList });
+      setIsEditingPending(false);
+      setShowPendingDetail(null);
+      fetchCompanies();
+    } catch (e) { alert("更新エラー"); }
+  };
+
+  const handleRestoreFromPending = async (item: any) => {
+    if (!confirm("理由を削除し、期限リストに戻しますか？")) return;
+    try {
+      const co = item.co;
+      const updatedList = co.pendingAlerts.filter((p: any) => p.pendingId !== item.pendingId);
+      await updateDoc(doc(db, "companies", co.id), { pendingAlerts: updatedList });
+      setShowPendingDetail(null);
+      fetchCompanies();
+    } catch (e) { alert("復帰エラー"); }
   };
 
   const handleCoCsvImport = async (file: File) => {
@@ -359,11 +439,31 @@ const handleSaveTodo = async () => {
   const handleSaveTrainee = async () => {
     const targetId = isEditingTr ? (trFormData.targetCompanyId || currentCo.id) : trFormData.targetCompanyId;
     if (!targetId) { alert("会社を選択してください"); return; }
+    
     const cleanedData = { ...trFormData };
-    Object.keys(cleanedData).forEach(key => { if (typeof cleanedData[key] === 'string' && key !== 'memo') cleanedData[key] = convertToAD(cleanedData[key]); });
+    Object.keys(cleanedData).forEach(key => {
+      const val = cleanedData[key];
+      if (typeof val === 'string' && key !== 'memo') {
+        if (!val.includes('～') && !val.includes('~')) {
+          cleanedData[key] = convertToAD(val);
+        }
+      }
+    });
+
     try {
       const targetCo = companies.find(c => c.id === targetId);
       let updatedTrainees = [...(targetCo.trainees || [])];
+      
+      // 技能検定時期の連動処理
+      if (cleanedData.batch !== "なし" && cleanedData.examDate) {
+        updatedTrainees = updatedTrainees.map((t: any) => {
+          if (t.batch === cleanedData.batch) {
+            return { ...t, examDate: cleanedData.examDate };
+          }
+          return t;
+        });
+      }
+
       if (isEditingTr && trFormData.id) {
         updatedTrainees = updatedTrainees.map((t: any) => {
           if (t.id === trFormData.id) {
@@ -380,6 +480,7 @@ const handleSaveTodo = async () => {
         const { targetCompanyId, ...saveData } = cleanedData;
         updatedTrainees = [...updatedTrainees, { ...saveData, id: Date.now(), phaseHistory: [] }];
       }
+      
       await updateDoc(doc(db, "companies", targetId), { trainees: updatedTrainees });
       setShowTrForm(false); fetchCompanies();
     } catch (e) { alert("保存エラー"); }
@@ -403,7 +504,11 @@ const handleSaveTodo = async () => {
           const key = csvToKeyMap[h];
           if (key) {
             let val = values[idx]?.trim() || "";
-            if (!['traineeName', 'kana', 'traineeAddress', 'cardNumber', 'passportNumber', 'certificateNumber', 'memo'].includes(key)) val = convertToAD(val);
+            if (!['traineeName', 'kana', 'traineeAddress', 'cardNumber', 'passportNumber', 'certificateNumber', 'memo', 'examDate'].includes(key)) {
+              if (!val.includes('～') && !val.includes('~')) {
+                val = convertToAD(val);
+              }
+            }
             trainee[key] = val;
           }
         });
@@ -425,14 +530,13 @@ const handleSaveTodo = async () => {
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: '#F9F9F9', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
         <div style={{ padding: '40px', background: '#fff', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', textAlign: 'center' }}>
           <h2 style={{ marginBottom: '20px', fontSize: '18px', color: '#2C3E50' }}>パスワードを入力してください</h2>
-          <input type="password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} style={{ padding: '10px', width: '200px', borderRadius: '4px', border: '1px solid #ddd', marginBottom: '20px', textAlign: 'center', fontSize: '18px', color: '#000' }} onKeyDown={(e) => { if (e.key === 'Enter' && passwordInput === '4647') setIsLoggedIn(true); }} />
-          <br /><button onClick={() => { if (passwordInput === '4647') setIsLoggedIn(true); else alert("パスワードが違います"); }} style={{ padding: '10px 30px', backgroundColor: '#F57C00', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>ログイン</button>
+          <input type="password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} style={{ padding: '10px', width: '200px', borderRadius: '4px', borderStyle: 'solid', borderWidth: '1px', borderColor: '#ddd', marginBottom: '20px', textAlign: 'center', fontSize: '18px', color: '#000' }} onKeyDown={(e) => { if (e.key === 'Enter' && passwordInput === '4647') setIsLoggedIn(true); }} />
+          <br /><button onClick={() => { if (passwordInput === '4647') setIsLoggedIn(true); else alert("パスワードが違います"); }} style={{ padding: '10px 30px', backgroundColor: '#F57C00', color: '#fff', borderStyle: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>ログイン</button>
         </div>
       </div>
     );
   }
 
-  // --- 印刷プレビュー (省略) ---
   if ((view === 'print_tr' || view === 'print_co') && isPreview) {
     const selectedCompany = companies.find(c => c.id === printCoId);
     const selectedTrainees = selectedCompany?.trainees.filter((t: any) => printTrIds.includes(t.id)) || [];
@@ -447,12 +551,12 @@ const handleSaveTodo = async () => {
           .list-table th, .list-table td { border: 1px solid #000; padding: 4px 6px; font-size: 10px; text-align: left; word-break: break-all; }
           .list-table th { background-color: #f2f2f2; }
         `}</style>
-        <div className="no-print" style={{ padding: '20px', display: 'flex', gap: '10px', background: '#eee', borderBottom: '1px solid #ccc', alignItems: 'center' }}>
+        <div className="no-print" style={{ padding: '20px', display: 'flex', gap: '10px', background: '#eee', borderBottomStyle: 'solid', borderBottomWidth: '1px', borderBottomColor: '#ccc', alignItems: 'center' }}>
           <button onClick={() => setIsPreview(false)} style={{ ...btnBase, backgroundColor: colors.gray, color: '#fff' }}>設定に戻る</button>
           <button onClick={() => window.print()} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>印刷を実行</button>
         </div>
         <div style={{ padding: '40px' }}>
-          <h2 style={{ fontSize: '18px', marginBottom: '15px', textAlign: 'center', borderBottom: '2px solid #000' }}>{view === 'print_tr' ? (printMode === 'individual' ? '技能実習生管理簿' : '実習生一覧表') : '実習実施者情報詳細'}</h2>
+          <h2 style={{ fontSize: '18px', marginBottom: '15px', textAlign: 'center', borderBottomStyle: 'solid', borderBottomWidth: '2px', borderBottomColor: '#000' }}>{view === 'print_tr' ? (printMode === 'individual' ? '技能実習生管理簿' : '実習生一覧表') : '実習実施者情報詳細'}</h2>
           {view === 'print_tr' && printMode === 'individual' ? (
             selectedTrainees.map((t: any) => (
               <div key={t.id} className="page-break" style={{ marginBottom: '50px' }}>
@@ -470,44 +574,68 @@ const handleSaveTodo = async () => {
     );
   }
 
-  // --- 印刷設定画面 ---
   if ((view === 'print_tr' || view === 'print_co') && !isPreview) {
     const selectedCompany = companies.find(c => c.id === printCoId);
     const labels = view === 'print_tr' ? labelMapTr : labelMapCo;
     return (
       <main style={{ padding: '40px', backgroundColor: '#F9F9F9', minHeight: '100vh' }}>
-        <header style={{ marginBottom: '30px' }}><button onClick={() => setView('list')} style={{ background: 'none', border: 'none', color: colors.gray, cursor: 'pointer', fontWeight: 'bold' }}>← キャンセルして戻る</button><h1 style={{ fontSize: '24px', marginTop: '10px' }}>{view === 'print_tr' ? '実習生情報の印刷設定' : '会社情報の印刷設定'}</h1></header>
+        <header style={{ marginBottom: '30px' }}><button onClick={() => setView('list')} style={{ background: 'none', borderStyle: 'none', color: colors.gray, cursor: 'pointer', fontWeight: 'bold' }}>← キャンセルして戻る</button><h1 style={{ fontSize: '24px', marginTop: '10px' }}>{view === 'print_tr' ? '実習生情報の印刷設定' : '会社情報の印刷設定'}</h1></header>
+        
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
-          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '8px', border: `1px solid ${colors.border}` }}>
-            <h3 style={{ marginBottom: '15px', fontSize: '16px' }}>1. 対象を選択</h3>
-            <p style={{ fontSize: '12px', color: colors.gray, marginBottom: '5px' }}>印刷元の会社</p>
-            <select style={{ width: '100%', padding: '10px', marginBottom: '20px', borderRadius: '4px', border: `1px solid ${colors.border}` }} value={printCoId} onChange={(e) => { setPrintCoId(e.target.value); setPrintTrIds([]); }}>
-              <option value="">会社を選択してください</option>
-              {companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
-            </select>
-            {view === 'print_tr' && selectedCompany && (
-              <>
-                <p style={{ fontSize: '12px', color: colors.gray, marginBottom: '5px' }}>印刷する実習生（複数選択可）</p>
-                <div style={{ maxHeight: '300px', overflowY: 'auto', border: `1px solid ${colors.border}`, padding: '10px', borderRadius: '4px' }}>
-                  {selectedCompany.trainees?.map((t: any) => (
-                    <label key={t.id} style={{ display: 'block', padding: '8px', borderBottom: `1px solid #f2f2f2`, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={printTrIds.includes(t.id)} onChange={(e) => { if (e.target.checked) setPrintTrIds([...printTrIds, t.id]); else setPrintTrIds(printTrIds.filter(id => id !== t.id)); }} style={{ marginRight: '10px' }} />{t.traineeName} ({t.batch})
-                    </label>
-                  ))}
-                </div>
-                <button onClick={() => setPrintTrIds(selectedCompany.trainees.map((t: any) => t.id))} style={{ ...btnBase, background: colors.lightGray, marginTop: '10px', width: '100%' }}>全員選択</button>
-              </>
-            )}
-          </div>
-          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '8px', border: `1px solid ${colors.border}` }}>
-            <h3 style={{ marginBottom: '15px', fontSize: '16px' }}>2. 印刷項目を選択</h3>
-            <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
-              <button onClick={() => setPrintFields(Object.keys(labels))} style={{ flex: 1, padding: '5px', fontSize: '11px', background: colors.lightGray, border: 'none', borderRadius: '3px' }}>全選択</button>
-              <button onClick={() => setPrintFields([])} style={{ flex: 1, padding: '5px', fontSize: '11px', background: colors.lightGray, border: 'none', borderRadius: '3px' }}>解除</button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '8px', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border }}>
+              <h3 style={{ marginBottom: '15px', fontSize: '16px' }}>1. 対象を選択</h3>
+              <p style={{ fontSize: '12px', color: colors.gray, marginBottom: '5px' }}>印刷元の会社</p>
+              <select style={{ width: '100%', padding: '10px', marginBottom: '20px', borderRadius: '4px', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border }} value={printCoId} onChange={(e) => { setPrintCoId(e.target.value); setPrintTrIds([]); }}>
+                <option value="">会社を選択してください</option>
+                {companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+              </select>
+              {view === 'print_tr' && selectedCompany && (
+                <>
+                  <p style={{ fontSize: '12px', color: colors.gray, marginBottom: '5px' }}>印刷する実習生（複数選択可）</p>
+                  <div style={{ maxHeight: '200px', overflowY: 'auto', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border, padding: '10px', borderRadius: '4px' }}>
+                    {selectedCompany.trainees?.map((t: any) => (
+                      <label key={t.id} style={{ display: 'block', padding: '8px', borderBottomStyle: 'solid', borderBottomWidth: '1px', borderBottomColor: '#f2f2f2', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={printTrIds.includes(t.id)} onChange={(e) => { if (e.target.checked) setPrintTrIds([...printTrIds, t.id]); else setPrintTrIds(printTrIds.filter(id => id !== t.id)); }} style={{ marginRight: '10px' }} />{t.traineeName} ({t.batch})
+                      </label>
+                    ))}
+                  </div>
+                  <button onClick={() => setPrintTrIds(selectedCompany.trainees.map((t: any) => t.id))} style={{ ...btnBase, background: colors.lightGray, marginTop: '10px', width: '100%' }}>全員選択</button>
+                </>
+              )}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
+
+            <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '8px', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border }}>
+              <h3 style={{ marginBottom: '15px', fontSize: '16px' }}>2. 印刷形式を選択</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', padding: '10px', borderStyle: 'solid', borderWidth: '1px', borderColor: printMode === 'individual' ? colors.accent : colors.border, borderRadius: '4px', backgroundColor: printMode === 'individual' ? '#FFF9F0' : 'transparent' }}>
+                  <input type="radio" name="printMode" checked={printMode === 'individual'} onChange={() => setPrintMode('individual')} style={{ marginTop: '4px' }} />
+                  <div>
+                    <div style={{ fontWeight: 'bold', fontSize: '14px' }}>【管理簿形式】（A4縦）</div>
+                    <div style={{ fontSize: '12px', color: colors.gray }}>1人につき1枚の帳票として印刷します。個人ファイルの表紙や詳細管理に最適です。</div>
+                  </div>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', padding: '10px', borderStyle: 'solid', borderWidth: '1px', borderColor: printMode === 'table' ? colors.accent : colors.border, borderRadius: '4px', backgroundColor: printMode === 'table' ? '#FFF9F0' : 'transparent' }}>
+                  <input type="radio" name="printMode" checked={printMode === 'table'} onChange={() => setPrintMode('table')} style={{ marginTop: '4px' }} />
+                  <div>
+                    <div style={{ fontWeight: 'bold', fontSize: '14px' }}>【一覧形式】（A4横）</div>
+                    <div style={{ fontSize: '12px', color: colors.gray }}>全情報を横一行の表として印刷します。名簿作成や全体把握に最適です。</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '8px', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border }}>
+            <h3 style={{ marginBottom: '15px', fontSize: '16px' }}>3. 印刷項目を選択</h3>
+            <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
+              <button onClick={() => setPrintFields(Object.keys(labels))} style={{ flex: 1, padding: '5px', fontSize: '11px', background: colors.lightGray, borderStyle: 'none', borderRadius: '3px' }}>全選択</button>
+              <button onClick={() => setPrintFields(view === 'print_tr' ? basicFieldsTr : basicFieldsCo)} style={{ flex: 1, padding: '5px', fontSize: '11px', background: colors.info, borderStyle: 'none', borderRadius: '3px', color: '#fff' }}>基本情報を選択</button>
+              <button onClick={() => setPrintFields([])} style={{ flex: 1, padding: '5px', fontSize: '11px', background: colors.lightGray, borderStyle: 'none', borderRadius: '3px' }}>解除</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', maxHeight: '450px', overflowY: 'auto' }}>
               {Object.keys(labels).map(key => (
-                <label key={key} style={{ fontSize: '13px', cursor: 'pointer' }}>
+                <label key={key} style={{ fontSize: '13px', cursor: 'pointer', padding: '4px', borderRadius: '2px', backgroundColor: printFields.includes(key) ? '#e3f2fd' : 'transparent' }}>
                   <input type="checkbox" checked={printFields.includes(key)} onChange={(e) => { if (e.target.checked) setPrintFields([...printFields, key]); else setPrintFields(printFields.filter(f => f !== key)); }} style={{ marginRight: '8px' }} />{labels[key]}
                 </label>
               ))}
@@ -519,30 +647,49 @@ const handleSaveTodo = async () => {
     );
   }
 
-  // --- トップ一覧画面 ---
   if (view === 'list') {
     const alertList: any[] = [];
     const pendingList: any[] = [];
+    const rawExamItems: any[] = [];
 
     companies.forEach(c => {
-      // 保留リスト
       (c.pendingAlerts || []).forEach((p: any) => {
-        const trainee = (c.trainees || []).find((t: any) => t.id === p.traineeId);
-        if (trainee) pendingList.push({ co: c, trainee, field: labelMapTr[p.field], deadline: p.deadline, memo: p.memo, movedAt: p.movedAt });
+        const trainee = (c.trainees || []).find((t: any) => String(t.id) === String(p.traineeId));
+        if (trainee) {
+          const days = getRemainingDays(p.deadline);
+          pendingList.push({ co: c, pendingId: p.pendingId, trainee, fieldKey: p.field, field: labelMapTr[p.field], deadline: p.deadline, memo: p.memo, movedAt: p.movedAt, days });
+        }
       });
 
-      // 通常アラート
       (c.trainees || []).forEach((t: any) => {
-        ["stayLimit", "examDate"].forEach(key => {
-          const isPending = (c.pendingAlerts || []).some((p: any) => p.traineeId === t.id && p.field === key);
-          if (isPending) return;
-          const style = getAlertStyle(t[key], key, t.category);
-          if (style.border && style.border !== 'none') {
-            alertList.push({ co: c, trainee: t, fieldKey: key, companyName: c.companyName, traineeName: t.traineeName, field: labelMapTr[key], deadline: t[key], days: getRemainingDays(t[key]), style });
+        const isPending = (c.pendingAlerts || []).some((p: any) => String(p.traineeId) === String(t.id) && p.field === "stayLimit");
+        if (!isPending) {
+          const style = getAlertStyle(t.stayLimit, "stayLimit", t.category);
+          if (style.borderWidth && style.borderWidth !== '0px') {
+            alertList.push({ co: c, trainee: t, fieldKey: "stayLimit", companyName: c.companyName, traineeName: t.traineeName, field: labelMapTr.stayLimit, deadline: t.stayLimit, days: getRemainingDays(t.stayLimit), style });
           }
-        });
+        }
+        if (t.examDate) {
+          const days = getRemainingDays(t.examDate);
+          if (days !== null && days >= 0) {
+            rawExamItems.push({ co: c, trainee: t, companyId: c.id, companyName: c.companyName, batch: t.batch, examDate: t.examDate, days });
+          }
+        }
       });
     });
+
+    const examGroupMap: { [key: string]: any } = {};
+    rawExamItems.forEach(item => {
+      const groupKey = `${item.companyId}-${item.batch}-${item.examDate}`;
+      if (!examGroupMap[groupKey]) {
+        examGroupMap[groupKey] = { ...item, trainees: [item.trainee.traineeName] };
+      } else {
+        examGroupMap[groupKey].trainees.push(item.trainee.traineeName);
+      }
+    });
+    const examList = Object.values(examGroupMap).sort((a, b) => (a.days ?? 999) - (b.days ?? 999));
+
+    const listColumnMaxHeight = '200px';
 
     return (
       <main style={{ padding: '40px', backgroundColor: '#F9F9F9', minHeight: '100vh', color: colors.text }}>
@@ -553,19 +700,20 @@ const handleSaveTodo = async () => {
             <div><div style={{ fontSize: '12px', color: colors.gray, marginBottom: '5px' }}>組合全体受入人数</div><div style={{ fontSize: '24px', fontWeight: '800', color: colors.accent }}>{totalActiveTrainees} <span style={{ fontSize: '14px', color: colors.text }}>名</span></div></div>
           </div>
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => { setIsPreview(false); setView('print_tr'); }} style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}` }}>実習生情報印刷</button>
-            <button onClick={() => { setIsPreview(false); setView('print_co'); }} style={{ ...btnBase, backgroundColor: '#fff', border: `1px solid ${colors.border}` }}>会社情報印刷</button>
+            <button onClick={() => { setIsPreview(false); setView('print_tr'); }} style={{ ...btnBase, backgroundColor: '#fff', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border }}>実習生情報印刷</button>
+            <button onClick={() => { setIsPreview(false); setView('print_co'); }} style={{ ...btnBase, backgroundColor: '#fff', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border }}>会社情報印刷</button>
             <button onClick={() => setShowTrMethodModal(true)} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習生</button>
             <button onClick={() => setShowCoMethodModal(true)} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>＋ 新規実習実施者</button>
           </div>
         </header>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '25px', marginBottom: '35px' }}>
-          
-          {/* 左：TODO管理 */}
-          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: `1px solid ${colors.border}`, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px', marginBottom: '35px' }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border, display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-              <h3 style={{ fontSize: '17px', fontWeight: 'bold' }}>📝 TODOリスト <span style={{ fontSize: '11px', color: colors.gray, fontWeight: 'normal' }}>（完了したらチェック）</span></h3>
+              <div>
+                <h3 style={{ fontSize: '17px', fontWeight: 'bold' }}>📝 TODOリスト</h3>
+                <p style={{ fontSize: '10px', color: colors.gray, marginTop: '-2px' }}>完了したらチェック</p>
+              </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button onClick={() => setShowAssigneeModal(true)} style={{ ...btnBase, padding: '4px 10px', fontSize: '10px', backgroundColor: colors.info, color: '#fff' }}>担当別表示</button>
                 <button onClick={() => { setTodoFormData(initialTodoForm); setIsEditingTodo(false); setShowTodoForm(true); }} style={{ ...btnBase, padding: '4px 10px', fontSize: '10px', backgroundColor: colors.accent, color: '#fff' }}>追加</button>
@@ -574,44 +722,32 @@ const handleSaveTodo = async () => {
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {todoCategoryOptions.map(cat => (
-                <div key={cat} style={{ border: `1px solid ${colors.lightGray}`, borderRadius: '6px', overflow: 'hidden' }}>
+                <div key={cat} style={{ borderStyle: 'solid', borderWidth: '1px', borderColor: colors.lightGray, borderRadius: '6px', overflow: 'hidden' }}>
                   <div style={{ backgroundColor: colors.lightGray, padding: '4px 12px', fontSize: '13px', fontWeight: 'bold' }}>【{cat}】</div>
-                  <div style={{ padding: '5px', overflowY: 'auto', maxHeight: '250px', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ padding: '0', overflowY: 'auto', height: listColumnMaxHeight, display: 'flex', flexDirection: 'column' }}>
                     {todos.filter(t => (t.todoCategory || "TODO") === cat).map(todo => {
                       const company = companies.find(c => c.id === todo.companyId);
-                      const trainee = company?.trainees?.find((tr: any) => tr.id === Number(todo.traineeId));
+                      const trainee = company?.trainees?.find((tr: any) => String(tr.id) === String(todo.traineeId));
                       const alertStyle = getAlertStyle(todo.deadline, 'deadline', '');
+                      const days = getRemainingDays(todo.deadline);
                       return (
-<div key={todo.id} style={{ 
-                          padding: '10px 12px', borderBottom: `1px solid ${colors.lightGray}`, cursor: 'pointer', 
+                        <div key={todo.id} style={{ 
+                          padding: '4px 12px', borderBottomStyle: 'solid', borderBottomWidth: '1px', borderBottomColor: colors.lightGray, cursor: 'pointer', 
                           display: 'flex', alignItems: 'center', gap: '15px', fontSize: '14px', ...alertStyle 
                         }} onClick={() => setSelectedTodo(todo)}>
-                          {/* チェックボックス */}
                           <input type="checkbox" onChange={() => handleCompleteTodo(todo)} onClick={(e) => e.stopPropagation()} style={{ width: '18px', height: '18px' }} />
-                          
-                          {/* 会社名：幅を220pxに固定（フル表示） */}
-                          <div style={{ fontWeight: '800', width: '220px', flexShrink: 0 }}>
+                          <div style={{ fontWeight: '800', width: '200px', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                             {company?.companyName || "会社名不明"}
                           </div>
-                          
-                          {/* 項目名（タスク）：残りの幅をすべて使う */}
-                          <div style={{ flex: 1, fontWeight: 'bold' }}>
-                            {todo.task}
-                          </div>
-                          
-                          {/* 担当者名：中央に1箇所だけ、幅80pxで表示 */}
+                          <div style={{ flex: 1, fontWeight: 'bold' }}>{todo.task}</div>
                           <div style={{ width: '80px', fontSize: '12px', color: colors.info, textAlign: 'center', flexShrink: 0, fontWeight: 'bold' }}>
                             {todo.assignee ? `[${todo.assignee}]` : ""}
                           </div>
-                          
-                          {/* バッチ・個人名：幅120px */}
-                          <div style={{ width: '120px', fontSize: '12px', color: colors.gray, flexShrink: 0 }}>
+                          <div style={{ width: '100px', fontSize: '12px', color: colors.gray, flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                             {trainee ? trainee.traineeName : (todo.batch !== "なし" ? todo.batch : "")}
                           </div>
-                          
-                          {/* 期限：右寄せ、幅100px */}
-                          <div style={{ width: '100px', fontSize: '12px', color: colors.danger, textAlign: 'right', fontWeight: 'bold', flexShrink: 0 }}>
-                            {todo.deadline ? `期限 ${todo.deadline.replace('2026/', '')}` : ""}
+                          <div style={{ width: '100px', fontSize: '12px', textAlign: 'right', fontWeight: 'bold', flexShrink: 0, color: (days && days < 0) ? colors.danger : 'inherit' }}>
+                            {formatDays(days)}
                           </div>
                         </div>
                       );
@@ -622,53 +758,82 @@ const handleSaveTodo = async () => {
             </div>
           </div>
 
-          {/* 右：期限リスト */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: `1px solid ${colors.border}`, flex: 1 }}>
-              <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '12px', color: colors.danger }}>⚠️ 期限注意リスト</h3>
-              <div style={{ overflowY: 'auto', maxHeight: '350px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                  <tbody>
-                    {alertList.sort((a, b) => (a.days ?? 999) - (b.days ?? 999)).map((item, idx) => (
-                      <tr key={idx} onClick={() => setSelectedAlert(item)} style={{ borderBottom: `1px solid #f0f0f0`, cursor: 'pointer', ...item.style }}>
-                        <td style={{ padding: '8px 5px' }}><b>{item.companyName}</b><br/>{item.traineeName}</td>
-                        <td style={{ padding: '8px 5px', color: colors.gray }}>{item.field}</td>
-                        <td style={{ padding: '8px 5px', textAlign: 'right', fontWeight: 'bold' }}>
-                          {formatDays(item.days)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border, display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ fontSize: '17px', fontWeight: 'bold', marginBottom: '15px' }}>🚨 期限・保留・試験日状況</h3>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ borderStyle: 'solid', borderWidth: '1px', borderColor: colors.lightGray, borderRadius: '6px', overflow: 'hidden' }}>
+                <div style={{ backgroundColor: '#FFF5F5', padding: '4px 12px', fontSize: '13px', fontWeight: 'bold', color: colors.danger }}>【期限注意】</div>
+                <div style={{ padding: '0', overflowY: 'auto', height: listColumnMaxHeight }}>
+                  {alertList.sort((a, b) => (a.days ?? 999) - (b.days ?? 999)).map((item, idx) => (
+                    <div key={idx} onClick={() => { setCurrentCo(item.co); setSelectedTrId(item.trainee.id); setView('detail'); }} style={{ padding: '4px 12px', borderBottomStyle: 'solid', borderBottomWidth: '1px', borderBottomColor: '#f0f0f0', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '14px', ...item.style }}>
+                      <div style={{ fontWeight: '800', width: '200px', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.companyName}</div>
+                      <div style={{ flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.traineeName}</div>
+                      <div style={{ width: '100px', fontSize: '12px', color: colors.gray, textAlign: 'center' }}>{item.field}</div>
+                      <div style={{ width: '100px', fontSize: '12px', textAlign: 'right', fontWeight: 'bold' }}>{formatDays(item.days)}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: `1px solid ${colors.border}`, flex: 1 }}>
-              <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '12px', color: colors.gray }}>⏸ 保留リスト</h3>
-              <div style={{ overflowY: 'auto', maxHeight: '200px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-                  <tbody>
-                    {pendingList.map((item, idx) => (
-                      <tr key={idx} onClick={() => { setCurrentCo(item.co); setSelectedTrId(item.trainee.id); setView('detail'); }} style={{ borderBottom: `1px solid #f0f0f0`, cursor: 'pointer' }}>
-                        <td style={{ padding: '6px 5px' }}><b>{item.co.companyName}</b><br/>{item.trainee.traineeName}</td>
-                        <td style={{ padding: '6px 5px', color: colors.gray }}>{item.field}<br/>({item.deadline})</td>
-                        <td style={{ padding: '6px 5px', color: colors.info }}>{item.memo}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+              <div style={{ borderStyle: 'solid', borderWidth: '1px', borderColor: colors.lightGray, borderRadius: '6px', overflow: 'hidden' }}>
+                <div style={{ backgroundColor: '#F0F9FF', padding: '4px 12px', fontSize: '13px', fontWeight: 'bold', color: colors.info }}>【保留】</div>
+                <div style={{ padding: '0', overflowY: 'auto', height: listColumnMaxHeight }}>
+                  {pendingList.map((item, idx) => (
+                    <div key={idx} onClick={() => { setCurrentCo(item.co); setSelectedTrId(item.trainee.id); setView('detail'); }} style={{ padding: '4px 12px', borderBottomStyle: 'solid', borderBottomWidth: '1px', borderBottomColor: '#f0f0f0', display: 'flex', alignItems: 'center', fontSize: '14px', cursor: 'pointer' }}>
+                      <div style={{ fontWeight: '800', width: '180px', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.co.companyName}</div>
+                      <div style={{ flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.trainee.traineeName}</div>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setShowPendingDetail(item); setPendingMemo(item.memo); setIsEditingPending(false); }}
+                        style={{ padding: '2px 8px', fontSize: '10px', backgroundColor: colors.info, color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '10px' }}
+                      >
+                        詳細
+                      </button>
+                      <div style={{ width: '100px', fontSize: '11px', textAlign: 'right', color: (item.days && item.days < 0) ? colors.danger : colors.gray }}>
+                        {formatDays(item.days)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ borderStyle: 'solid', borderWidth: '1px', borderColor: colors.lightGray, borderRadius: '6px', overflow: 'hidden' }}>
+                <div style={{ backgroundColor: '#F2F2F2', padding: '4px 12px', fontSize: '13px', fontWeight: 'bold', color: colors.text }}>【試験日】</div>
+                <div style={{ padding: '0', overflowY: 'auto', height: listColumnMaxHeight }}>
+                  {examList.map((item, idx) => {
+                    const isUrgent = item.days <= 1;
+                    return (
+                      <div key={idx} 
+                        onClick={() => { setCurrentCo(item.co); setView('detail'); setFilterBatch(item.batch); }} 
+                        style={{ 
+                          padding: '4px 12px', borderBottomStyle: 'solid', borderBottomWidth: '1px', borderBottomColor: '#f0f0f0', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '14px',
+                          borderStyle: isUrgent ? 'solid' : 'none',
+                          borderWidth: isUrgent ? '3px' : '0px',
+                          borderColor: 'red',
+                          margin: isUrgent ? '2px' : '0'
+                        }}
+                      >
+                        <div style={{ fontWeight: '800', width: '160px', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.companyName}</div>
+                        <div style={{ width: '50px', fontWeight: 'bold', fontSize: '12px', flexShrink: 0 }}>{item.batch !== "なし" ? item.batch : "個人"}</div>
+                        <div style={{ flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontSize: '11px', color: colors.gray }}>{item.trainees.join(', ')}</div>
+                        <div style={{ width: '110px', fontSize: '11px', color: colors.gray, textAlign: 'center' }}>{item.examDate}</div>
+                        <div style={{ width: '70px', fontSize: '12px', color: item.days <= 14 ? colors.danger : colors.text, textAlign: 'right', fontWeight: 'bold' }}>{formatDays(item.days)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* 実施者一覧 */}
         <h3 style={{ fontSize: '17px', fontWeight: 'bold', marginBottom: '15px' }}>🏢 実習実施者一覧</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '15px' }}>
           {companies.map(c => {
             const activeCount = (c.trainees || []).filter((t: any) => t.category !== "実習終了").length;
             const alertTrigger = (c.trainees || []).some((t: any) => hasAlert(t));
             return (
-              <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); setFilterBatch('すべて'); }} style={{ backgroundColor: '#fff', padding: '14px', borderRadius: '6px', border: alertTrigger ? `2px solid ${colors.danger}` : `1px solid ${colors.border}`, cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}>
+              <div key={c.id} onClick={() => { setCurrentCo(c); setView('detail'); setFilterBatch('すべて'); }} style={{ backgroundColor: '#fff', padding: '14px', borderRadius: '6px', borderStyle: 'solid', borderWidth: alertTrigger ? '2px' : '1px', borderColor: alertTrigger ? colors.danger : colors.border, cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}>
                 <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px' }}>{c.companyName}</div>
                 <div style={{ fontSize: '12px', color: colors.gray }}>受入中: <span style={{ fontWeight: 'bold', color: colors.accent }}>{activeCount}</span> 名</div>
               </div>
@@ -676,7 +841,48 @@ const handleSaveTodo = async () => {
           })}
         </div>
 
-        {/* --- ポップアップ類 --- */}
+        {/* 保留詳細ポップアップ */}
+        {showPendingDetail && (
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3600, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', width: '450px' }}>
+              <h3 style={{ marginBottom: '15px' }}>保留の詳細</h3>
+              <div style={{ padding: '15px', background: '#f9f9f9', borderRadius: '6px', fontSize: '14px', marginBottom: '20px' }}>
+                <b>対象：</b> {showPendingDetail.trainee.traineeName}<br/>
+                <b>項目：</b> {showPendingDetail.field}<br/>
+                <b>期限：</b> {showPendingDetail.deadline} ({formatDays(showPendingDetail.days)})
+              </div>
+              
+              <label style={{ fontSize: '12px', fontWeight: 'bold' }}>保留の理由</label>
+              {isEditingPending ? (
+                <textarea 
+                  style={{ width: '100%', height: '100px', padding: '10px', marginTop: '5px', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.accent }} 
+                  value={pendingMemo} 
+                  onChange={(e) => setPendingMemo(e.target.value)}
+                />
+              ) : (
+                <div style={{ width: '100%', minHeight: '80px', padding: '10px', marginTop: '5px', background: '#fff', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border, fontSize: '14px', whiteSpace: 'pre-wrap' }}>
+                  {showPendingDetail.memo}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                {isEditingPending ? (
+                  <>
+                    <button onClick={() => setIsEditingPending(false)} style={{ ...btnBase, backgroundColor: colors.lightGray, flex: 1 }}>キャンセル</button>
+                    <button onClick={() => handleUpdatePending(pendingMemo)} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff', flex: 1 }}>更新保存</button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => setShowPendingDetail(null)} style={{ ...btnBase, backgroundColor: colors.lightGray, flex: 1 }}>閉じる</button>
+                    <button onClick={() => setIsEditingPending(true)} style={{ ...btnBase, backgroundColor: colors.info, color: '#fff', flex: 1 }}>理由を編集</button>
+                    <button onClick={() => handleRestoreFromPending(showPendingDetail)} style={{ ...btnBase, backgroundColor: colors.danger, color: '#fff', flex: 1.5 }}>期限リストに戻す</button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {selectedAlert && (
           <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3500, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <div style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', width: '450px' }}>
@@ -688,7 +894,7 @@ const handleSaveTodo = async () => {
                 <b>期限：</b> {selectedAlert.deadline} ({formatDays(selectedAlert.days)})
               </div>
               <label style={{ fontSize: '12px', fontWeight: 'bold' }}>保留の理由（必須）</label>
-              <textarea placeholder="理由をメモしてください" style={{ width: '100%', height: '80px', padding: '10px', marginTop: '5px', border: `1px solid ${colors.border}` }} value={pendingMemo} onChange={(e) => setPendingMemo(e.target.value)} />
+              <textarea placeholder="理由をメモしてください" style={{ width: '100%', height: '80px', padding: '10px', marginTop: '5px', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border }} value={pendingMemo} onChange={(e) => setPendingMemo(e.target.value)} />
               <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
                 <button onClick={() => { setSelectedAlert(null); setPendingMemo(""); }} style={{ ...btnBase, backgroundColor: colors.lightGray, flex: 1 }}>閉じる</button>
                 <button onClick={handleMoveToPending} style={{ ...btnBase, backgroundColor: colors.info, color: '#fff', flex: 1.5 }}>保留リストへ移動</button>
@@ -757,12 +963,12 @@ const handleSaveTodo = async () => {
                   <button key={name} onClick={() => setSelectedAssigneeFilter(name === "担当者無" ? "" : name)} style={{ ...btnBase, backgroundColor: (selectedAssigneeFilter === (name === "担当者無" ? "" : name)) ? colors.info : colors.lightGray, color: (selectedAssigneeFilter === (name === "担当者無" ? "" : name)) ? '#fff' : '#000' }}>{name}</button>
                 ))}
               </div>
-              <div style={{ flex: 1, overflowY: 'auto', border: `1px solid ${colors.border}`, padding: '15px' }}>
+              <div style={{ flex: 1, overflowY: 'auto', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border, padding: '15px' }}>
                 {todos.filter(t => (t.assignee || "") === selectedAssigneeFilter).map(todo => {
                   const company = companies.find(c => c.id === todo.companyId);
-                  const trainee = company?.trainees?.find((tr: any) => tr.id === Number(todo.traineeId));
+                  const trainee = company?.trainees?.find((tr: any) => String(tr.id) === String(todo.traineeId));
                   return (
-                    <div key={todo.id} style={{ padding: '10px', borderBottom: `1px solid ${colors.border}` }}>
+                    <div key={todo.id} style={{ padding: '10px', borderBottomStyle: 'solid', borderBottomWidth: '1px', borderBottomColor: colors.border }}>
                       <span onClick={() => { setCurrentCo(company); setView('detail'); setShowAssigneeModal(false); }} style={{ fontWeight: 'bold', color: colors.accent, cursor: 'pointer', textDecoration: 'underline' }}>{company?.companyName}</span>
                       {trainee && <span onClick={() => { setCurrentCo(company); setSelectedTrId(trainee.id); setView('detail'); setShowAssigneeModal(false); }} style={{ marginLeft: '10px', color: colors.info, cursor: 'pointer', textDecoration: 'underline' }}>{trainee.traineeName}</span>}
                       <div style={{ fontWeight: 'bold', marginTop: '5px' }}>{todo.task}</div>
@@ -780,12 +986,11 @@ const handleSaveTodo = async () => {
             <div onClick={e => e.stopPropagation()} style={{ backgroundColor: '#FFF', padding: '30px', borderRadius: '8px', width: '400px' }}>
               <div onClick={() => { setCurrentCo(companies.find(c => c.id === selectedTodo.companyId)); setView('detail'); setSelectedTodo(null); }} style={{ fontSize: '15px', color: colors.accent, cursor: 'pointer', fontWeight: '800', textDecoration: 'underline' }}>{companies.find(c => c.id === selectedTodo.companyId)?.companyName}</div>
               <h3>{selectedTodo.task}</h3>
-              {/* ポップアップ詳細に対象を表示 */}
               <div style={{ fontSize: '12px', color: colors.gray, marginBottom: '10px' }}>
                 対象：{
                   (() => {
                     const company = companies.find(c => c.id === selectedTodo.companyId);
-                    const trainee = company?.trainees?.find((tr: any) => tr.id === Number(selectedTodo.traineeId));
+                    const trainee = company?.trainees?.find((tr: any) => String(tr.id) === String(selectedTodo.traineeId));
                     return trainee ? `${trainee.traineeName} (${trainee.batch})` : (selectedTodo.batch !== "なし" ? selectedTodo.batch : "全体");
                   })()
                 }
@@ -809,24 +1014,23 @@ const handleSaveTodo = async () => {
     );
   }
 
-  // --- 会社詳細画面 ---
   if (view === 'detail') {
     const currentTrainee = currentCo.trainees?.find((t: any) => t.id === selectedTrId);
     return (
       <main style={{ backgroundColor: '#FBFBFB', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-        <nav style={{ padding: '15px 30px', backgroundColor: '#FFF', borderBottom: `1px solid ${colors.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: '15px' }}><button onClick={() => { setView('list'); setSelectedTrId(null); }} style={{ background: 'none', border: 'none', color: colors.gray, cursor: 'pointer', fontWeight: 'bold' }}>← 戻る</button>{selectedTrId && <button onClick={() => setSelectedTrId(null)} style={{ background: 'none', border: 'none', color: colors.accent, cursor: 'pointer', fontWeight: 'bold' }}>/ {currentCo.companyName}</button>}</div>
+        <nav style={{ padding: '15px 30px', backgroundColor: '#FFF', borderBottomStyle: 'solid', borderBottomWidth: '1px', borderBottomColor: colors.border, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '15px' }}><button onClick={() => { setView('list'); setSelectedTrId(null); }} style={{ background: 'none', borderStyle: 'none', color: colors.gray, cursor: 'pointer', fontWeight: 'bold' }}>← 戻る</button>{selectedTrId && <button onClick={() => setSelectedTrId(null)} style={{ background: 'none', borderStyle: 'none', color: colors.accent, cursor: 'pointer', fontWeight: 'bold' }}>/ {currentCo.companyName}</button>}</div>
           <div style={{ display: 'flex', gap: '10px' }}>
             {!selectedTrId ? (
-              <><button onClick={() => { setIsEditingCo(true); setCoFormData(currentCo); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>編集</button><button onClick={handleDeleteCompany} style={{ ...btnBase, backgroundColor: '#FFF', border: `1px solid ${colors.danger}`, color: colors.danger }}>削除</button></>
+              <><button onClick={() => { setIsEditingCo(true); setCoFormData(currentCo); setShowCoForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>編集</button><button onClick={handleDeleteCompany} style={{ ...btnBase, backgroundColor: '#FFF', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.danger, color: colors.danger }}>削除</button></>
             ) : (
-              <><button onClick={() => { setTrFormData(activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]); setIsEditingTr(true); setEditingPhaseIdx(activeTab === 'current' ? null : (activeTab as number)); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>編集・区分変更</button><button onClick={handleDeleteTrainee} style={{ ...btnBase, border: `1px solid ${colors.danger}`, color: colors.danger }}>削除</button><button onClick={() => setSelectedTrId(null)} style={{ ...btnBase, backgroundColor: colors.lightGray }}>閉じる</button></>
+              <><button onClick={() => { setTrFormData(activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]); setIsEditingTr(true); setEditingPhaseIdx(activeTab === 'current' ? null : (activeTab as number)); setShowTrForm(true); }} style={{ ...btnBase, backgroundColor: colors.accent, color: '#fff' }}>編集・区分変更</button><button onClick={handleDeleteTrainee} style={{ ...btnBase, borderStyle: 'solid', borderWidth: '1px', borderColor: colors.danger, color: colors.danger }}>削除</button><button onClick={() => setSelectedTrId(null)} style={{ ...btnBase, backgroundColor: colors.lightGray }}>閉じる</button></>
             )}
           </div>
         </nav>
         <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', flex: 1, backgroundColor: colors.border, gap: '1px' }}>
           <aside style={{ backgroundColor: '#FFF', padding: '30px', overflowY: 'auto', maxHeight: 'calc(100vh - 65px)' }}>
-            <h2 style={{ fontSize: '18px', marginBottom: '20px', borderBottom: `2px solid ${colors.main}`, paddingBottom: '10px' }}>{currentCo.companyName}</h2>
+            <h2 style={{ fontSize: '18px', marginBottom: '20px', borderBottomStyle: 'solid', borderBottomWidth: '2px', borderBottomColor: colors.main, paddingBottom: '10px' }}>{currentCo.companyName}</h2>
             {Object.keys(labelMapCo).map(k => { 
               if (k === 'memo') return null; 
               return (
@@ -839,16 +1043,16 @@ const handleSaveTodo = async () => {
                 </div>
               ); 
             })}
-            <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: `1px solid ${colors.border}` }}><label style={{ fontSize: '11px', color: colors.gray }}>会社メモ</label><textarea value={currentCo.memo || ''} onChange={async (e) => { const m = e.target.value; setCurrentCo({ ...currentCo, memo: m }); await updateDoc(doc(db, "companies", currentCo.id), { memo: m }); }} style={{ width: '100%', height: '100px', padding: '10px', fontSize: '12px' }} /></div>
-            <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: `2px solid ${colors.main}` }}>
+            <div style={{ marginTop: '20px', paddingTop: '20px', borderTopStyle: 'solid', borderTopWidth: '1px', borderTopColor: colors.border }}><label style={{ fontSize: '11px', color: colors.gray }}>会社メモ</label><textarea value={currentCo.memo || ''} onChange={async (e) => { const m = e.target.value; setCurrentCo({ ...currentCo, memo: m }); await updateDoc(doc(db, "companies", currentCo.id), { memo: m }); }} style={{ width: '100%', height: '100px', padding: '10px', fontSize: '12px' }} /></div>
+            <div style={{ marginTop: '30px', paddingTop: '20px', borderTopStyle: 'solid', borderTopWidth: '2px', borderTopColor: colors.main }}>
               <h4 style={{ fontSize: '13px', marginBottom: '10px' }}>✅ 完了したやること</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {(currentCo.completedTodos || []).sort((a: any, b: any) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()).map((todo: any, idx: number) => (
-                  <div key={idx} style={{ padding: '8px', fontSize: '12px', border: `1px solid ${colors.border}`, borderRadius: '4px', backgroundColor: '#fcfcfc', position: 'relative' }}>
+                  <div key={idx} style={{ padding: '8px', fontSize: '12px', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border, borderRadius: '4px', backgroundColor: '#fcfcfc', position: 'relative' }}>
                     <div onClick={() => setSelectedTodo(todo)} style={{ cursor: 'pointer' }}><div style={{ fontWeight: 'bold' }}>{todo.task}</div><div style={{ fontSize: '10px', color: colors.gray }}>完了: {todo.completedAt}</div></div>
                     <div style={{ position: 'absolute', top: '5px', right: '5px', display: 'flex', gap: '5px' }}>
-                      <button onClick={() => handleUndoTodo(todo)} style={{ background: '#E3F2FD', border: '1px solid #2196F3', color: '#2196F3', fontSize: '9px', padding: '2px 4px', borderRadius: '2px', cursor: 'pointer' }}>もとに戻す</button>
-                      <button onClick={() => handleDeleteCompletedTodo(todo.completedId)} style={{ background: 'none', border: 'none', color: colors.danger, fontSize: '10px', cursor: 'pointer' }}>×</button>
+                      <button onClick={() => handleUndoTodo(todo)} style={{ background: '#E3F2FD', borderStyle: 'solid', borderWidth: '1px', borderColor: '#2196F3', color: '#2196F3', fontSize: '9px', padding: '2px 4px', borderRadius: '2px', cursor: 'pointer' }}>もとに戻す</button>
+                      <button onClick={() => handleDeleteCompletedTodo(todo.completedId)} style={{ background: 'none', borderStyle: 'none', color: colors.danger, fontSize: '10px', cursor: 'pointer' }}>×</button>
                     </div>
                   </div>
                 ))}
@@ -857,35 +1061,59 @@ const handleSaveTodo = async () => {
           </aside>
           <section style={{ backgroundColor: '#FBFBFB', padding: '40px', overflowY: 'auto' }}>
             {!selectedTrId ? (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '20px' }}><h3 style={{ fontSize: '14px', color: colors.gray }}>実習生一覧</h3>
-                  <div style={{ display: 'flex', gap: '4px', backgroundColor: colors.lightGray, padding: '3px', borderRadius: '6px' }}>
-                    <button onClick={() => setFilterBatch('すべて')} style={{ padding: '4px 10px', fontSize: '11px', border: 'none', borderRadius: '4px', backgroundColor: filterBatch === 'すべて' ? colors.white : 'transparent' }}>すべて</button>
-                    {batchOptions.filter(b => b !== "なし" && (currentCo.trainees || []).some((t: any) => t.batch === b)).map(b => (<button key={b} onClick={() => setFilterBatch(b)} style={{ padding: '4px 10px', fontSize: '11px', border: 'none', borderRadius: '4px', backgroundColor: filterBatch === b ? colors.white : 'transparent' }}>{b}</button>))}
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '20px' }}><h3 style={{ fontSize: '14px', color: colors.gray }}>実習生一覧</h3>
+                    <div style={{ display: 'flex', gap: '4px', backgroundColor: colors.lightGray, padding: '3px', borderRadius: '6px' }}>
+                      <button onClick={() => setFilterBatch('すべて')} style={{ padding: '4px 10px', fontSize: '11px', borderStyle: 'none', borderRadius: '4px', backgroundColor: filterBatch === 'すべて' ? colors.white : 'transparent' }}>すべて</button>
+                      {batchOptions.filter(b => b !== "なし" && (currentCo.trainees || []).some((t: any) => t.batch === b)).map(b => (<button key={b} onClick={() => setFilterBatch(b)} style={{ padding: '4px 10px', fontSize: '11px', borderStyle: 'none', borderRadius: '4px', backgroundColor: filterBatch === b ? colors.white : 'transparent' }}>{b}</button>))}
+                    </div>
+                  </div>
+                  {categoryOptions.map(cat => {
+                    const list = (currentCo.trainees || []).filter((t: any) => t.category === cat && (filterBatch === 'すべて' || t.batch === filterBatch));
+                    if (list.length === 0) return null;
+                    return (<div key={cat} style={{ marginBottom: '25px' }}><div style={{ fontSize: '11px', fontWeight: 'bold', color: colors.accent, marginBottom: '10px' }}>{cat}</div><div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>{list.map((t: any) => (<button key={t.id} onClick={() => { setSelectedTrId(t.id); setActiveTab('current'); }} style={{ padding: '12px 24px', backgroundColor: batchColorMap[t.batch] || "#FFF", borderStyle: 'solid', borderWidth: hasAlert(t) ? '2px' : '1px', borderColor: hasAlert(t) ? colors.danger : colors.border, borderRadius: sharpRadius, fontWeight: 'bold' }}>{t.traineeName} {hasAlert(t) && "⚠️"}</button>))}</div></div>);
+                  })}
+                </div>
+                
+                {/* バッチ履歴セクション */}
+                <div style={{ marginTop: 'auto', paddingTop: '40px' }}>
+                  <h4 style={{ fontSize: '15px', fontWeight: 'bold', color: colors.gray, borderBottomStyle: 'solid', borderBottomWidth: '1px', borderBottomColor: colors.border, paddingBottom: '10px', marginBottom: '15px' }}>
+                    {filterBatch === 'すべて' ? '全実習生の履歴' : `${filterBatch}の実習生の履歴`}
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {(currentCo.trainees || [])
+                      .filter((t: any) => filterBatch === 'すべて' || t.batch === filterBatch)
+                      .map((t: any) => (
+                        <div key={t.id} style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '8px', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border }}>
+                          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>{t.traineeName} ({t.batch})</div>
+                          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            <div style={{ fontSize: '11px', background: colors.lightGray, padding: '4px 8px', borderRadius: '4px' }}>現在: {t.category}</div>
+                            {(t.phaseHistory || []).map((h: any, idx: number) => (
+                              <div key={idx} style={{ fontSize: '11px', background: '#F0F9FF', padding: '4px 8px', borderRadius: '4px', color: colors.info }}>過去: {h.category}</div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
                   </div>
                 </div>
-                {categoryOptions.map(cat => {
-                  const list = (currentCo.trainees || []).filter((t: any) => t.category === cat && (filterBatch === 'すべて' || t.batch === filterBatch));
-                  if (list.length === 0) return null;
-                  return (<div key={cat} style={{ marginBottom: '25px' }}><div style={{ fontSize: '11px', fontWeight: 'bold', color: colors.accent, marginBottom: '10px' }}>{cat}</div><div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>{list.map((t: any) => (<button key={t.id} onClick={() => { setSelectedTrId(t.id); setActiveTab('current'); }} style={{ padding: '12px 24px', backgroundColor: batchColorMap[t.batch] || "#FFF", border: hasAlert(t) ? `2px solid ${colors.danger}` : `1px solid ${colors.border}`, borderRadius: sharpRadius, fontWeight: 'bold' }}>{t.traineeName} {hasAlert(t) && "⚠️"}</button>))}</div></div>);
-                })}
               </div>
             ) : (
-              <div style={{ backgroundColor: '#FFF', padding: '35px', border: `1px solid ${colors.border}`, borderRadius: sharpRadius }}>
+              <div style={{ backgroundColor: '#FFF', padding: '35px', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border, borderRadius: sharpRadius }}>
                 <h3 style={{ fontSize: '20px', marginBottom: '20px' }}>{(activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number]).traineeName}</h3>
                 <div style={{ display: 'flex', gap: '2px', marginBottom: '25px' }}>
-                  <button onClick={() => setActiveTab('current')} style={{ padding: '10px 20px', border: `1px solid ${activeTab === 'current' ? colors.accent : colors.border}`, borderBottom: activeTab === 'current' ? 'none' : `1px solid ${colors.border}`, background: activeTab === 'current' ? colors.white : colors.lightGray, fontWeight: 'bold', borderRadius: '4px 4px 0 0', position: 'relative', top: '1px', zIndex: 1 }}>最新</button>
-                  {[...(currentTrainee.phaseHistory || [])].reverse().map((h, idx) => { const oIdx = currentTrainee.phaseHistory.length - 1 - idx; return <button key={idx} onClick={() => setActiveTab(oIdx)} style={{ padding: '10px 20px', border: `1px solid ${activeTab === oIdx ? colors.accent : colors.border}`, borderBottom: activeTab === oIdx ? 'none' : `1px solid ${colors.border}`, background: activeTab === oIdx ? colors.white : colors.lightGray, borderRadius: '4px 4px 0 0', position: 'relative', top: '1px' }}>{h.category}時</button>; })}
+                  <button onClick={() => setActiveTab('current')} style={{ padding: '10px 20px', borderStyle: 'solid', borderWidth: '1px', borderColor: activeTab === 'current' ? colors.accent : colors.border, borderBottom: activeTab === 'current' ? 'none' : `1px solid ${colors.border}`, background: activeTab === 'current' ? colors.white : colors.lightGray, fontWeight: 'bold', borderRadius: '4px 4px 0 0', position: 'relative', top: '1px', zIndex: 1 }}>最新</button>
+                  {[...(currentTrainee.phaseHistory || [])].reverse().map((h, idx) => { const oIdx = currentTrainee.phaseHistory.length - 1 - idx; return <button key={idx} onClick={() => setActiveTab(oIdx)} style={{ padding: '10px 20px', borderStyle: 'solid', borderWidth: '1px', borderColor: activeTab === oIdx ? colors.accent : colors.border, borderBottom: activeTab === oIdx ? 'none' : `1px solid ${colors.border}`, background: activeTab === oIdx ? colors.white : colors.lightGray, borderRadius: '4px 4px 0 0', position: 'relative', top: '1px' }}>{h.category}時</button>; })}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 50px', borderTop: `1px solid ${colors.border}`, paddingTop: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 50px', borderTopStyle: 'solid', borderTopWidth: '1px', borderTopColor: colors.border, paddingTop: '20px' }}>
                   {Object.keys(labelMapTr).map(k => {
                     if (k === 'memo') return null;
                     const data = activeTab === 'current' ? currentTrainee : currentTrainee.phaseHistory[activeTab as number];
                     const alertStyle = getAlertStyle(data[k], k, data.category);
-                    return (<div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: alertStyle.border ? 'none' : `1px solid #F0F0F0`, padding: '12px 5px', fontSize: '14px', ...alertStyle }}><span style={{ color: colors.gray }}>{labelMapTr[k]}</span><div style={{ display: 'flex', alignItems: 'center' }}><span style={{ fontWeight: 'bold' }}>{data[k] || '-'}</span><button onClick={() => copy(data[k])} style={grayCBtn}>C</button></div></div>);
+                    return (<div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottomStyle: alertStyle.borderWidth ? 'none' : 'solid', borderBottomWidth: alertStyle.borderWidth ? '0px' : '1px', borderBottomColor: '#F0F0F0', padding: '12px 5px', fontSize: '14px', ...alertStyle }}><span style={{ color: colors.gray }}>{labelMapTr[k]}</span><div style={{ display: 'flex', alignItems: 'center' }}><span style={{ fontWeight: 'bold' }}>{data[k] || '-'}</span><button onClick={() => copy(data[k])} style={grayCBtn}>C</button></div></div>);
                   })}
                 </div>
-                <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: `2px solid ${colors.main}` }}><label style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginBottom: '10px' }}>個人メモ</label><textarea value={currentTrainee.memo || ''} onChange={async (e) => { const m = e.target.value; const trs = currentCo.trainees.map((t: any) => t.id === currentTrainee.id ? { ...t, memo: m } : t); setCurrentCo({ ...currentCo, trainees: trs }); await updateDoc(doc(db, "companies", currentCo.id), { trainees: trs }); }} style={{ width: '100%', height: '200px', padding: '15px', fontSize: '14px', border: `1px solid ${colors.border}`, borderRadius: '8px', backgroundColor: '#F0F9FF' }} /></div>
+                <div style={{ marginTop: '40px', paddingTop: '20px', borderTopStyle: 'solid', borderTopWidth: '2px', borderTopColor: colors.main }}><label style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginBottom: '10px' }}>個人メモ</label><textarea value={currentTrainee.memo || ''} onChange={async (e) => { const m = e.target.value; const trs = currentCo.trainees.map((t: any) => t.id === currentTrainee.id ? { ...t, memo: m } : t); setCurrentCo({ ...currentCo, trainees: trs }); await updateDoc(doc(db, "companies", currentCo.id), { trainees: trs }); }} style={{ width: '100%', height: '200px', padding: '15px', fontSize: '14px', borderStyle: 'solid', borderWidth: '1px', borderColor: colors.border, borderRadius: '8px', backgroundColor: '#F0F9FF' }} /></div>
               </div>
             )}
           </section>
@@ -913,8 +1141,8 @@ function CoFormModal({ coFormData, setCoFormData, handleSaveCompany, setShowCoFo
                 {k !== 'memo' && <button onClick={() => copy(coFormData[k])} style={grayCBtn}>C</button>}
               </div>
               {k === 'memo' ? 
-                <textarea value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC', height: '100px' }} onChange={e => handleChange(k, e.target.value)} /> 
-                : <input type="text" value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC' }} onChange={e => handleChange(k, e.target.value)} />
+                <textarea value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', borderStyle: 'solid', borderWidth: '1px', borderColor: '#CCC', height: '100px' }} onChange={e => handleChange(k, e.target.value)} /> 
+                : <input type="text" value={coFormData[k] || ''} style={{ width: '100%', padding: '8px', borderStyle: 'solid', borderWidth: '1px', borderColor: '#CCC' }} onChange={e => handleChange(k, e.target.value)} />
               }
             </div>
           ))}
@@ -933,6 +1161,12 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
     let newData = { ...trFormData, [k]: v };
     if (k === 'birthday') newData.age = calculateAge(v);
     if (k === 'entryDate') { const { end, renew } = calculateDates(v); newData.endDate = end; newData.renewStartDate = renew; }
+    
+    if (!['traineeName', 'kana', 'traineeAddress', 'cardNumber', 'passportNumber', 'certificateNumber', 'memo', 'examDate'].includes(k)) {
+      if (!v.includes('～') && !v.includes('~')) {
+        newData[k] = convertToAD(v);
+      }
+    }
     if (k === 'category' && isEditingTr && editingPhaseIdx === null) { if (confirm("区分を変更しますか？")) { const arc = { ...trFormData }; delete arc.phaseHistory; newData.phaseHistory = [...(trFormData.phaseHistory || []), arc]; keysToClearOnNewPhase.forEach(key => { newData[key] = (key === "status") ? "選択する" : ""; }); } }
     setTrFormData(newData);
   };
@@ -941,17 +1175,17 @@ function TrFormModal({ trFormData, setTrFormData, handleSaveTrainee, setShowTrFo
       <div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: '8px', width: '90%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto' }}>
         <h2>実習生情報入力</h2>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-          {!isEditingTr && (<div style={{ gridColumn: 'span 2' }}><label style={{ fontSize: '11px', fontWeight: 'bold' }}>配属会社</label><select style={{ width: '100%', padding: '8px', border: '1px solid #CCC' }} value={trFormData.targetCompanyId} onChange={e => handleChange('targetCompanyId', e.target.value)}><option value="">会社を選択</option>{companies.map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</select></div>)}
+          {!isEditingTr && (<div style={{ gridColumn: 'span 2' }}><label style={{ fontSize: '11px', fontWeight: 'bold' }}>配属会社</label><select style={{ width: '100%', padding: '8px', borderStyle: 'solid', borderWidth: '1px', borderColor: '#CCC' }} value={trFormData.targetCompanyId} onChange={e => handleChange('targetCompanyId', e.target.value)}><option value="">会社を選択</option>{companies.map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</select></div>)}
           {Object.keys(labelMapTr).map(k => (
             <div key={k} style={{ gridColumn: k === 'memo' ? 'span 2' : 'auto' }}>
               <label style={{ fontSize: '11px', fontWeight: 'bold' }}>{labelMapTr[k]}</label>
               {['status', 'category', 'batch', 'gender'].includes(k) ? (
-                <select style={{ width: '100%', padding: '8px', border: '1px solid #CCC' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
+                <select style={{ width: '100%', padding: '8px', borderStyle: 'solid', borderWidth: '1px', borderColor: '#CCC' }} value={trFormData[k]} onChange={e => handleChange(k, e.target.value)}>
                   {(k === 'status' ? statusOptions : k === 'category' ? categoryOptions : k === 'batch' ? batchOptions : ["男", "女"]).map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : k === 'memo' ? 
-                <textarea value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC', height: '100px' }} onChange={e => handleChange(k, e.target.value)} /> 
-                : <input type="text" value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', border: '1px solid #CCC' }} onChange={e => handleChange(k, e.target.value)} />
+                <textarea value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', borderStyle: 'solid', borderWidth: '1px', borderColor: '#CCC', height: '100px' }} onChange={e => handleChange(k, e.target.value)} /> 
+                : <input type="text" value={trFormData[k] || ''} style={{ width: '100%', padding: '8px', borderStyle: 'solid', borderWidth: '1px', borderColor: '#CCC' }} onChange={e => handleChange(k, e.target.value)} placeholder={k === 'examDate' ? '2026/04/07～2026/05/10' : ''} />
               }
             </div>
           ))}
