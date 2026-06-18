@@ -108,6 +108,16 @@ const formatDays = (days: number | null) => {
   return `あと${days}日`;
 };
 
+const getCategoryShort = (category: string) => {
+  const map: { [key: string]: string } = {
+    "技能実習1号": "1号",
+    "技能実習2号(1)": "2号1",
+    "技能実習2号(2)": "2号2",
+    "特定技能": "特定",
+  };
+  return map[category] || "";
+};
+
 // ★ エラー回避のため Shorthand (border) は使用せず、全方向を個別指定に展開
 const getAlertStyle = (dateStr: string, fieldKey: string, category: string): any => {
   if (!dateStr || category === "実習終了") return { color: '#2C3E50' };
@@ -153,6 +163,10 @@ const getAlertStyle = (dateStr: string, fieldKey: string, category: string): any
     if (diffDays <= 30) return { ...getBorderSideStyles('2px', '#E74C3C'), color: '#E74C3C' };
     if (diffDays <= 50) return { ...getBorderSideStyles('2px', '#F57C00'), color: '#F57C00' };
     if (diffDays <= 60) return { ...getBorderSideStyles('2px', '#FFD700'), color: '#8B8000' };
+    // ★ 技能実習1号のみ、90日前から早期アラート（情報レベル）を追加
+    if (category === "技能実習1号" && diffDays <= 90) {
+      return { ...getBorderSideStyles('2px', '#90CAF9'), color: '#1565C0' };
+    }
   }
 
   return {};
@@ -679,15 +693,15 @@ export default function Home() {
       });
     });
 
-    const examGroupMap: { [key: string]: any } = {};
-    rawExamItems.forEach(item => {
-      const groupKey = `${item.companyId}-${item.batch}-${item.examDate}`;
-      if (!examGroupMap[groupKey]) {
-        examGroupMap[groupKey] = { ...item, trainees: [item.trainee.traineeName] };
-      } else {
-        examGroupMap[groupKey].trainees.push(item.trainee.traineeName);
-      }
-    });
+const examGroupMap: { [key: string]: any } = {};
+rawExamItems.forEach(item => {
+  const groupKey = `${item.companyId}-${item.batch}-${item.examDate}`;
+  if (!examGroupMap[groupKey]) {
+    examGroupMap[groupKey] = { ...item, trainees: [{ name: item.trainee.traineeName, category: item.trainee.category }] };
+  } else {
+    examGroupMap[groupKey].trainees.push({ name: item.trainee.traineeName, category: item.trainee.category });
+  }
+});
     const examList = Object.values(examGroupMap).sort((a, b) => (a.days ?? 999) - (b.days ?? 999));
 
     const listColumnMaxHeight = '200px';
@@ -766,14 +780,20 @@ export default function Home() {
               <div style={{ borderStyle: 'solid', borderWidth: '1px', borderColor: colors.lightGray, borderRadius: '6px', overflow: 'hidden' }}>
                 <div style={{ backgroundColor: '#FFF5F5', padding: '4px 12px', fontSize: '13px', fontWeight: 'bold', color: colors.danger }}>【期限注意】</div>
                 <div style={{ padding: '0', overflowY: 'auto', height: listColumnMaxHeight }}>
-                  {alertList.sort((a, b) => (a.days ?? 999) - (b.days ?? 999)).map((item, idx) => (
-                    <div key={idx} onClick={() => { setCurrentCo(item.co); setSelectedTrId(item.trainee.id); setView('detail'); }} style={{ padding: '4px 12px', borderBottomStyle: 'solid', borderBottomWidth: '1px', borderBottomColor: '#f0f0f0', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '14px', ...item.style }}>
-                      <div style={{ fontWeight: '800', width: '200px', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.companyName}</div>
-                      <div style={{ flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.traineeName}</div>
-                      <div style={{ width: '100px', fontSize: '12px', color: colors.gray, textAlign: 'center' }}>{item.field}</div>
-                      <div style={{ width: '100px', fontSize: '12px', textAlign: 'right', fontWeight: 'bold' }}>{formatDays(item.days)}</div>
-                    </div>
-                  ))}
+                 {alertList.sort((a, b) => (a.days ?? 999) - (b.days ?? 999)).map((item, idx) => (
+  <div key={idx} onClick={() => { setCurrentCo(item.co); setSelectedTrId(item.trainee.id); setView('detail'); }} style={{ padding: '4px 12px', borderBottomStyle: 'solid', borderBottomWidth: '1px', borderBottomColor: '#f0f0f0', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '14px', ...item.style }}>
+    <div style={{ fontWeight: '800', width: '200px', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.companyName}</div>
+    <div style={{ flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.traineeName}{getCategoryShort(item.trainee.category) && `(${getCategoryShort(item.trainee.category)})`}</div>
+    <div style={{ width: '100px', fontSize: '12px', color: colors.gray, textAlign: 'center' }}>{item.field}</div>
+    <button
+      onClick={(e) => { e.stopPropagation(); setSelectedAlert(item); setPendingMemo(""); }}
+      style={{ padding: '2px 8px', fontSize: '10px', backgroundColor: colors.info, color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '10px' }}
+    >
+      編集
+    </button>
+    <div style={{ width: '100px', fontSize: '12px', textAlign: 'right', fontWeight: 'bold' }}>{formatDays(item.days)}</div>
+  </div>
+))}
                 </div>
               </div>
 
@@ -783,7 +803,7 @@ export default function Home() {
                   {pendingList.map((item, idx) => (
                     <div key={idx} onClick={() => { setCurrentCo(item.co); setSelectedTrId(item.trainee.id); setView('detail'); }} style={{ padding: '4px 12px', borderBottomStyle: 'solid', borderBottomWidth: '1px', borderBottomColor: '#f0f0f0', display: 'flex', alignItems: 'center', fontSize: '14px', cursor: 'pointer' }}>
                       <div style={{ fontWeight: '800', width: '180px', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.co.companyName}</div>
-                      <div style={{ flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.trainee.traineeName}</div>
+                      <div style={{ flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.trainee.traineeName}{getCategoryShort(item.trainee.category) && `(${getCategoryShort(item.trainee.category)})`}</div>
                       <button 
                         onClick={(e) => { e.stopPropagation(); setShowPendingDetail(item); setPendingMemo(item.memo); setIsEditingPending(false); }}
                         style={{ padding: '2px 8px', fontSize: '10px', backgroundColor: colors.info, color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '10px' }}
@@ -816,7 +836,9 @@ export default function Home() {
                       >
                         <div style={{ fontWeight: '800', width: '160px', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{item.companyName}</div>
                         <div style={{ width: '50px', fontWeight: 'bold', fontSize: '12px', flexShrink: 0 }}>{item.batch !== "なし" ? item.batch : "個人"}</div>
-                        <div style={{ flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontSize: '11px', color: colors.gray }}>{item.trainees.join(', ')}</div>
+                        <div style={{ flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontSize: '11px', color: colors.gray }}>
+  {item.trainees.map((tr: any) => `${tr.name}${getCategoryShort(tr.category) ? `(${getCategoryShort(tr.category)})` : ''}`).join(', ')}
+</div>
                         <div style={{ width: '110px', fontSize: '11px', color: colors.gray, textAlign: 'center' }}>{item.examDate}</div>
                         <div style={{ width: '70px', fontSize: '12px', color: item.days <= 14 ? colors.danger : colors.text, textAlign: 'right', fontWeight: 'bold' }}>{formatDays(item.days)}</div>
                       </div>
